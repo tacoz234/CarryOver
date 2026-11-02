@@ -1,0 +1,32 @@
+name: CopyBlip
+options:
+  bundleIdPrefix: com.coledeterman
+  deploymentTarget:
+    iOS: "17.0"
+packages:
+  CopyBlipKit:
+    path: CopyBlipKit
+targets:
+  CopyBlip:
+    type: application
+    platform: iOS
+    sources: [CopyBlip]
+    dependencies:
+      - package: CopyBlipKit
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.coledeterman.CopyBlip
+        MARKETING_VERSION: "0.1.0"
+        CURRENT_PROJECT_VERSION: "1"
+        TARGETED_DEVICE_FAMILY: "1,2"
+        SWIFT_VERSION: "6.0"
+        GENERATE_INFOPLIST_FILE: YES
+        CODE_SIGN_STYLE: Automatic
+        DEVELOPMENT_TEAM: A6GZ8F6PF5
+        INFOPLIST_KEY_UILaunchScreen_Generation: YES
+        INFOPLIST_KEY_CFBundleDisplayName: CopyBlip
+        INFOPLIST_KEY_NSLocalNetworkUsageDescription: CopyBlip finds your Mac and Windows devices on this network to share the clipboard with them.
+    info:
+      path: CopyBlip/Info.plist
+      properties:
+        NSBonjourServices: [_copyblip._tcp]

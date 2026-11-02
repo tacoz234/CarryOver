@@ -25,7 +25,7 @@ responder -> initiator key = okm[32..64]
 ## Frames
 
 ```
-u32 big-endian ciphertext length (16 to 8 MiB)
+u32 big-endian ciphertext length (16 to 24 MiB)
 ChaCha20-Poly1305 ciphertext and tag
 ```
 
@@ -38,19 +38,33 @@ The plaintext of each frame is one JSON object:
 ```json
 {"t":"hello","device":"<id>","name":"<display name>"}
 {"t":"clip","id":"<random hex>","text":"<up to 1 MiB>"}
+{"t":"image","id":"<random hex>","png":"<base64 PNG, up to 16 MiB>"}
 {"t":"latest"}
 {"t":"ping"}
 ```
+
+Devices skip message types they don't recognize, so newer versions can add types without breaking older ones.
 
 Each side's first frame is `hello`. Nothing else is sent until the peer's `hello` authenticates, which proves it holds the key.
 
 ## Sync rules
 
-- A `clip` with an ID that's already been seen is dropped. Otherwise it's applied and forwarded to other connections.
+- A `clip` or `image` with an ID that's already been seen is dropped. Otherwise it's applied and forwarded to other connections. If the content is already on the clipboard, it's neither rewritten nor forwarded.
+- When a copy holds both text and an image, only the text is sent.
 - The most recent clip to arrive wins. Device clocks aren't used, so a wrong clock can't block a device.
 - Nothing is sent on startup or connect, only after a new copy.
 - `latest` asks for the most recent clip, which is sent back to the asker only, with its original ID. The iPhone app sends this when opened. If nothing has been copied yet, there's no reply.
 - Pings go out after 15 seconds of silence, and a connection is dropped after 45 seconds without a frame.
+
+## Relay
+
+Devices on different networks can connect through a relay; see [relay/README.md](../relay/README.md). A relayed pipe carries exactly the same bytes as a TCP connection, split into WebSocket binary messages of at most 256 KiB.
+
+The relay room is the first 16 bytes of `HKDF-SHA256(ikm = key, no salt, info = "copyblip v1 relay room")`, in hex.
+
+## Invite links
+
+`copyblip://join?code=<pairing code>&relay=<https URL>`. The relay is optional. `copyblip invite` shows this as a QR code, and the iPhone app opens it after asking.
 
 ## Known limits
 

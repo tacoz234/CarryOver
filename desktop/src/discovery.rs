@@ -4,7 +4,6 @@ use crate::protocol::{GroupKey, group_tag};
 use anyhow::{Context, Result};
 use mdns_sd::{ServiceDaemon, ServiceEvent, ServiceInfo};
 use std::collections::HashMap;
-use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
 use std::thread;
 
@@ -24,7 +23,7 @@ pub fn start(hub: Arc<Hub>, key: &GroupKey, device: &str, port: u16) -> Result<(
     thread::spawn(move || {
         // Keeps the daemon's handle alive for as long as we browse.
         let _daemon = daemon;
-        let mut targets: HashMap<String, Arc<Mutex<Vec<SocketAddr>>>> = HashMap::new();
+        let mut targets: HashMap<String, Arc<Mutex<Vec<String>>>> = HashMap::new();
         while let Ok(event) = events.recv() {
             match event {
                 ServiceEvent::ServiceResolved(service) => {
@@ -33,10 +32,13 @@ pub fn start(hub: Arc<Hub>, key: &GroupKey, device: &str, port: u16) -> Result<(
                     let Some(peer) = peer.filter(|peer| same_group && *peer != device) else {
                         continue;
                     };
-                    let addresses: Vec<SocketAddr> = service
+                    let addresses: Vec<String> = service
                         .get_addresses()
                         .iter()
-                        .map(|ip| SocketAddr::new(ip.to_ip_addr(), service.get_port()))
+                        .map(|ip| {
+                            std::net::SocketAddr::new(ip.to_ip_addr(), service.get_port())
+                                .to_string()
+                        })
                         .collect();
                     match targets.get(&peer) {
                         Some(existing) => *existing.lock().unwrap() = addresses,

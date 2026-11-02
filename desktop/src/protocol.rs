@@ -11,8 +11,10 @@ use std::io::{Read, Write};
 
 pub const GROUP_KEY_LEN: usize = 32;
 pub const MAX_TEXT: usize = 1024 * 1024;
-/// JSON escaping can grow text up to sixfold, so this leaves room for MAX_TEXT.
-const MAX_FRAME: usize = 8 * 1024 * 1024;
+pub const MAX_IMAGE: usize = 16 * 1024 * 1024;
+/// Leaves room for MAX_IMAGE in base64, and MAX_TEXT after JSON escaping,
+/// which can grow text up to sixfold.
+const MAX_FRAME: usize = 24 * 1024 * 1024;
 const MAGIC: &[u8; 5] = b"CBLP\x01";
 const NONCE_LEN: usize = 32;
 const TAG_LEN: usize = 16;
@@ -28,11 +30,40 @@ pub enum Role {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "t", rename_all = "lowercase")]
 pub enum Message {
-    Hello { device: String, name: String },
-    Clip { id: String, text: String },
+    Hello {
+        device: String,
+        name: String,
+    },
+    Clip {
+        id: String,
+        text: String,
+    },
+    Image {
+        id: String,
+        #[serde(with = "base64_bytes")]
+        png: Vec<u8>,
+    },
     /// Asks for the most recent clip. Phones send this when opened.
     Latest,
     Ping,
+    /// A message type from a newer version, which is skipped rather than
+    /// ending the connection.
+    #[serde(other)]
+    Unknown,
+}
+
+mod base64_bytes {
+    use base64::{Engine, engine::general_purpose::STANDARD};
+    use serde::{Deserialize, Deserializer, Serializer, de::Error};
+
+    pub fn serialize<S: Serializer>(bytes: &[u8], serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_str(&STANDARD.encode(bytes))
+    }
+
+    pub fn deserialize<'de, D: Deserializer<'de>>(deserializer: D) -> Result<Vec<u8>, D::Error> {
+        let text = String::deserialize(deserializer)?;
+        STANDARD.decode(text).map_err(D::Error::custom)
+    }
 }
 
 pub struct Sealer {
@@ -80,7 +111,10 @@ impl Opener {
         let mut len = [0u8; 4];
         reader.read_exact(&mut len)?;
         let len = u32::from_be_bytes(len) as usize;
-        ensure!((TAG_LEN..=MAX_FRAME).contains(&len), "bad frame length {len}");
+        ensure!(
+            (TAG_LEN..=MAX_FRAME).contains(&len),
+            "bad frame length {len}"
+        );
         let mut sealed = vec![0u8; len];
         reader.read_exact(&mut sealed)?;
         let nonce = frame_nonce(self.counter);
@@ -157,13 +191,25 @@ pub fn group_tag(key: &GroupKey) -> String {
     hex::encode(tag)
 }
 
+/// The relay room for a group. Derived from the key, so only members can find it.
+pub fn relay_room(key: &GroupKey) -> String {
+    let mut room = [0u8; 16];
+    Hkdf::<Sha256>::new(None, key)
+        .expand(b"copyblip v1 relay room", &mut room)
+        .expect("16 bytes is a valid HKDF length");
+    hex::encode(room)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use std::net::{TcpListener, TcpStream};
     use std::thread;
 
-    fn pair(a: GroupKey, b: GroupKey) -> ((Sealer, Opener), (Sealer, Opener), TcpStream, TcpStream) {
+    fn pair(
+        a: GroupKey,
+        b: GroupKey,
+    ) -> ((Sealer, Opener), (Sealer, Opener), TcpStream, TcpStream) {
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         let addr = listener.local_addr().unwrap();
         let client = thread::spawn(move || {
@@ -237,12 +283,40 @@ mod tests {
     }
 
     #[test]
+    fn images_travel_as_base64_and_unknown_types_are_tolerated() {
+        let image = Message::Image {
+            id: "1".into(),
+            png: vec![0, 1, 2, 255],
+        };
+        let json = serde_json::to_string(&image).unwrap();
+        assert_eq!(json, r#"{"t":"image","id":"1","png":"AAEC/w=="}"#);
+        assert_eq!(serde_json::from_str::<Message>(&json).unwrap(), image);
+        // Swift's JSON encoder escapes slashes.
+        let swift = r#"{"t":"image","id":"1","png":"AAEC\/w=="}"#;
+        assert_eq!(serde_json::from_str::<Message>(swift).unwrap(), image);
+        let future = r#"{"t":"files","id":"2","names":["a"]}"#;
+        assert_eq!(
+            serde_json::from_str::<Message>(future).unwrap(),
+            Message::Unknown
+        );
+    }
+
+    #[test]
     fn group_tag_differs_by_key_and_hides_it() {
         assert_ne!(group_tag(&[1; 32]), group_tag(&[2; 32]));
         assert_eq!(group_tag(&[1; 32]).len(), 16);
     }
 
     /// Also checked by the iOS tests, so both sides must agree on it.
+    #[test]
+    fn relay_room_differs_from_group_tag() {
+        let key = [1; 32];
+        assert_eq!(relay_room(&key).len(), 32);
+        assert!(!relay_room(&key).starts_with(&group_tag(&key)));
+        // Also checked by the iOS tests.
+        assert_eq!(relay_room(&key), "b516525745f11172a676fbd38a1be4e1");
+    }
+
     #[test]
     fn group_tag_matches_reference_value() {
         assert_eq!(group_tag(&[1; 32]), "22953167989813ac");

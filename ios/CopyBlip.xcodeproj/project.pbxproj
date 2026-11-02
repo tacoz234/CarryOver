@@ -12,6 +12,7 @@
 		0DA1A777ED4CD8DBA0978CC6 /* SyncModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6679B052FBAE3AD9EFCAC942 /* SyncModel.swift */; };
 		4FBC4F12CAF355A65DDDC119 /* CopyBlipApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2E110FC41425C09F8159F15B /* CopyBlipApp.swift */; };
 		70BDD1CE370D70ED85BD9EEE /* Keychain.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE22F4CEC553AB3EB4D3DBB4 /* Keychain.swift */; };
+		E7878A2D002896BEBDB4DC52 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 7D9966508A8929BCB153C38A /* Assets.xcassets */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -20,6 +21,7 @@
 		6679B052FBAE3AD9EFCAC942 /* SyncModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncModel.swift; sourceTree = "<group>"; };
 		68B2E57CCA5EA5A88400230C /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		72A628766F79826AE6542DEB /* CopyBlip.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = CopyBlip.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		7D9966508A8929BCB153C38A /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		BB8DF4387E601CFC3F39A928 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		FE22F4CEC553AB3EB4D3DBB4 /* Keychain.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Keychain.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
@@ -47,6 +49,7 @@
 		86E68BF47F11A341911134A2 /* CopyBlip */ = {
 			isa = PBXGroup;
 			children = (
+				7D9966508A8929BCB153C38A /* Assets.xcassets */,
 				68B2E57CCA5EA5A88400230C /* ContentView.swift */,
 				2E110FC41425C09F8159F15B /* CopyBlipApp.swift */,
 				BB8DF4387E601CFC3F39A928 /* Info.plist */,
@@ -81,6 +84,7 @@
 			buildConfigurationList = E6B5BBA66A2D5CD103AC58E5 /* Build configuration list for PBXNativeTarget "CopyBlip" */;
 			buildPhases = (
 				B7D593A0998BF83BD833A8FD /* Sources */,
+				0703FFA158FEC1506D8B7D6B /* Resources */,
 				03E8FFA94684DDAD4371A043 /* Frameworks */,
 			);
 			buildRules = (
@@ -131,6 +135,17 @@
 			);
 		};
 /* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		0703FFA158FEC1506D8B7D6B /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				E7878A2D002896BEBDB4DC52 /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
 		B7D593A0998BF83BD833A8FD /* Sources */ = {

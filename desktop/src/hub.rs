@@ -1,14 +1,14 @@
 //! Moves clips between the local clipboard and connected peers.
-use crate::clipboard::Clipboard;
-use crate::protocol::{GroupKey, MAX_TEXT, Message, Opener, Role, Sealer, handshake};
+use crate::clipboard::{Clipboard, Content};
+use crate::protocol::{GroupKey, MAX_IMAGE, MAX_TEXT, Message, Opener, Role, Sealer, handshake};
 use anyhow::{Result, bail};
-use sha2::{Digest, Sha256};
 use std::collections::{HashMap, HashSet, VecDeque};
-use std::net::{Shutdown, SocketAddr, TcpListener, TcpStream};
+use std::net::{Shutdown, TcpListener, TcpStream, ToSocketAddrs};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, RecvTimeoutError, Sender};
 use std::sync::{Arc, Mutex};
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 const POLL_INTERVAL: Duration = Duration::from_millis(250);
 const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(5);
@@ -20,8 +20,18 @@ const SEEN_LIMIT: usize = 512;
 
 type Hash = [u8; 32];
 
-fn hash(text: &str) -> Hash {
-    Sha256::digest(text.as_bytes()).into()
+fn too_large(content: &Content) -> bool {
+    match content {
+        Content::Text(text) => text.len() > MAX_TEXT,
+        Content::Image(png) => png.len() > MAX_IMAGE,
+    }
+}
+
+fn to_message(id: String, content: Content) -> Message {
+    match content {
+        Content::Text(text) => Message::Clip { id, text },
+        Content::Image(png) => Message::Image { id, png },
+    }
 }
 
 #[derive(Default)]
@@ -33,7 +43,8 @@ struct State {
     last_hash: Option<Hash>,
     /// Answers `Latest` requests.
     last_clip: Option<Message>,
-    peers: HashMap<u64, Sender<Message>>,
+    peers: HashMap<u64, Peer>,
+    last_activity: Option<Activity>,
     next_connection: u64,
 }
 
@@ -55,10 +66,31 @@ impl State {
     fn broadcast(&self, message: &Message, except: Option<u64>) {
         for (connection, peer) in &self.peers {
             if Some(*connection) != except {
-                let _ = peer.send(message.clone());
+                let _ = peer.sender.send(message.clone());
             }
         }
     }
+}
+
+struct Peer {
+    device: String,
+    name: String,
+    sender: Sender<Message>,
+}
+
+/// The last clip sent or received, for the tray menu.
+#[derive(Clone, Debug)]
+pub struct Activity {
+    pub description: String,
+    pub at: Instant,
+}
+
+/// A snapshot for the tray menu.
+pub struct Status {
+    /// Names of connected devices, without duplicates.
+    pub connected: Vec<String>,
+    pub paused: bool,
+    pub last_activity: Option<Activity>,
 }
 
 pub struct Hub {
@@ -67,21 +99,56 @@ pub struct Hub {
     name: String,
     clipboard: Arc<dyn Clipboard>,
     state: Mutex<State>,
+    paused: AtomicBool,
 }
 
 impl Hub {
-    pub fn new(key: GroupKey, device: String, name: String, clipboard: Arc<dyn Clipboard>) -> Arc<Self> {
+    pub fn new(
+        key: GroupKey,
+        device: String,
+        name: String,
+        clipboard: Arc<dyn Clipboard>,
+    ) -> Arc<Self> {
         Arc::new(Self {
             key,
             device,
             name,
             clipboard,
             state: Mutex::new(State::default()),
+            paused: AtomicBool::new(false),
         })
+    }
+
+    /// While paused, copies here aren't sent and clips from others aren't applied.
+    pub fn set_paused(&self, paused: bool) {
+        self.paused.store(paused, Ordering::Relaxed);
+        eprintln!("{}", if paused { "paused" } else { "resumed" });
+    }
+
+    pub fn status(&self) -> Status {
+        let state = self.state.lock().unwrap();
+        let mut connected: Vec<String> =
+            state.peers.values().map(|peer| peer.name.clone()).collect();
+        connected.sort();
+        connected.dedup();
+        Status {
+            connected,
+            paused: self.paused.load(Ordering::Relaxed),
+            last_activity: state.last_activity.clone(),
+        }
     }
 
     pub fn peer_count(&self) -> usize {
         self.state.lock().unwrap().peers.len()
+    }
+
+    pub fn is_connected(&self, device: &str) -> bool {
+        self.state
+            .lock()
+            .unwrap()
+            .peers
+            .values()
+            .any(|peer| peer.device == device)
     }
 
     /// Only changes after startup are sent. Syncing on launch or connect would
@@ -102,19 +169,25 @@ impl Hub {
     }
 
     fn local_change(&self) {
-        let text = match self.clipboard.read_text() {
-            Ok(Some(text)) => text,
+        if self.paused.load(Ordering::Relaxed) {
+            return;
+        }
+        let content = match self.clipboard.read() {
+            Ok(Some(content)) => content,
             Ok(None) => return,
             Err(error) => {
                 eprintln!("could not read clipboard: {error:#}");
                 return;
             }
         };
-        if text.len() > MAX_TEXT {
-            eprintln!("skipped a {} byte copy, the limit is {MAX_TEXT}", text.len());
+        if too_large(&content) {
+            eprintln!(
+                "skipped {}, which is over the size limit",
+                content.describe()
+            );
             return;
         }
-        let digest = hash(&text);
+        let digest = content.digest();
         let mut state = self.state.lock().unwrap();
         if state.last_hash == Some(digest) {
             return;
@@ -122,22 +195,30 @@ impl Hub {
         state.last_hash = Some(digest);
         let id = hex::encode(rand::random::<[u8; 16]>());
         state.mark_seen(&id);
-        eprintln!("sending {} bytes to {} connection(s)", text.len(), state.peers.len());
-        let message = Message::Clip { id, text };
+        eprintln!(
+            "sending {} to {} connection(s)",
+            content.describe(),
+            state.peers.len()
+        );
+        state.last_activity = Some(Activity {
+            description: format!("Sent {}", content.kind()),
+            at: Instant::now(),
+        });
+        let message = to_message(id, content);
         state.broadcast(&message, None);
         state.last_clip = Some(message);
     }
 
-    fn remote_clip(&self, connection: u64, id: String, text: String) {
-        if text.len() > MAX_TEXT {
+    fn remote_clip(&self, connection: u64, id: String, content: Content) {
+        if too_large(&content) || self.paused.load(Ordering::Relaxed) {
             return;
         }
         let mut state = self.state.lock().unwrap();
         if !state.mark_seen(&id) {
             return;
         }
-        let digest = hash(&text);
-        let message = Message::Clip { id, text };
+        let digest = content.digest();
+        let message = to_message(id, content.clone());
         if state.last_hash == Some(digest) {
             // Already on this clipboard, e.g. the phone sending back something it
             // got through Universal Clipboard. Every device that set last_hash
@@ -146,15 +227,21 @@ impl Hub {
             return;
         }
         state.last_hash = Some(digest);
+        let from = state
+            .peers
+            .get(&connection)
+            .map(|peer| peer.name.clone())
+            .unwrap_or_default();
+        state.last_activity = Some(Activity {
+            description: format!("Received {} from {from}", content.kind()),
+            at: Instant::now(),
+        });
         // Forwarded so devices that can only reach each other through us still sync.
         state.broadcast(&message, Some(connection));
-        state.last_clip = Some(message.clone());
+        state.last_clip = Some(message);
         drop(state);
-        let Message::Clip { text, .. } = &message else {
-            unreachable!()
-        };
-        eprintln!("received {} bytes", text.len());
-        if let Err(error) = self.clipboard.write_text(text) {
+        eprintln!("received {}", content.describe());
+        if let Err(error) = self.clipboard.write(&content) {
             eprintln!("could not write clipboard: {error:#}");
         }
     }
@@ -175,7 +262,9 @@ impl Hub {
     }
 
     /// Keeps a connection to `targets` up, retrying until the list is emptied.
-    pub fn dial(self: &Arc<Self>, targets: Arc<Mutex<Vec<SocketAddr>>>) {
+    /// Targets are `host:port`, looked up on each attempt so names like
+    /// Tailscale's follow address changes.
+    pub fn dial(self: &Arc<Self>, targets: Arc<Mutex<Vec<String>>>) {
         let hub = self.clone();
         thread::spawn(move || {
             let mut delay = Duration::from_millis(250);
@@ -184,7 +273,11 @@ impl Hub {
                 if addresses.is_empty() {
                     return;
                 }
-                for address in addresses {
+                let resolved = addresses
+                    .iter()
+                    .filter_map(|target| target.to_socket_addrs().ok())
+                    .flatten();
+                for address in resolved {
                     if let Ok(stream) = TcpStream::connect_timeout(&address, CONNECT_TIMEOUT) {
                         delay = Duration::from_millis(250);
                         if let Err(error) = hub.run_connection(stream, Role::Initiator) {
@@ -199,7 +292,9 @@ impl Hub {
         });
     }
 
-    fn run_connection(&self, mut stream: TcpStream, role: Role) -> Result<()> {
+    /// Runs one connection until it ends. Relayed connections arrive as a
+    /// local socket, so they use this too.
+    pub(crate) fn run_connection(&self, mut stream: TcpStream, role: Role) -> Result<()> {
         stream.set_nodelay(true)?;
         stream.set_read_timeout(Some(HANDSHAKE_TIMEOUT))?;
         let (mut sealer, mut opener) = handshake(&mut stream, &self.key, role)?;
@@ -224,7 +319,14 @@ impl Hub {
             let mut state = self.state.lock().unwrap();
             let connection = state.next_connection;
             state.next_connection += 1;
-            state.peers.insert(connection, sender);
+            state.peers.insert(
+                connection,
+                Peer {
+                    device: device.clone(),
+                    name: name.clone(),
+                    sender,
+                },
+            );
             connection
         };
         eprintln!("connected to {name}");
@@ -250,17 +352,25 @@ impl Hub {
         result
     }
 
-    fn read_loop(&self, stream: &mut TcpStream, opener: &mut Opener, connection: u64) -> Result<()> {
+    fn read_loop(
+        &self,
+        stream: &mut TcpStream,
+        opener: &mut Opener,
+        connection: u64,
+    ) -> Result<()> {
         loop {
             match opener.recv(stream)? {
-                Message::Clip { id, text } => self.remote_clip(connection, id, text),
+                Message::Clip { id, text } => self.remote_clip(connection, id, Content::Text(text)),
+                Message::Image { id, png } => self.remote_clip(connection, id, Content::Image(png)),
                 Message::Latest => {
                     let state = self.state.lock().unwrap();
-                    if let (Some(clip), Some(peer)) = (&state.last_clip, state.peers.get(&connection)) {
-                        let _ = peer.send(clip.clone());
+                    if let (Some(clip), Some(peer)) =
+                        (&state.last_clip, state.peers.get(&connection))
+                    {
+                        let _ = peer.sender.send(clip.clone());
                     }
                 }
-                Message::Ping => {}
+                Message::Ping | Message::Unknown => {}
                 Message::Hello { .. } => bail!("unexpected hello"),
             }
         }

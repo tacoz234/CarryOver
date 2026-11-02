@@ -1,4 +1,4 @@
-use copyblip::clipboard::{Clipboard, MemoryClipboard};
+use copyblip::clipboard::{Clipboard, Content, MemoryClipboard};
 use copyblip::hub::Hub;
 use copyblip::protocol::{Message, Role, handshake};
 use std::net::{SocketAddr, TcpListener, TcpStream};
@@ -30,7 +30,8 @@ fn node(name: &str, key: [u8; 32]) -> Node {
 }
 
 fn connect(from: &Node, to: &Node) {
-    from.hub.dial(Arc::new(Mutex::new(vec![to.address])));
+    from.hub
+        .dial(Arc::new(Mutex::new(vec![to.address.to_string()])));
 }
 
 fn wait_for(what: &str, mut condition: impl FnMut() -> bool) {
@@ -54,7 +55,9 @@ fn settle() {
 fn copies_sync_both_ways_without_echoing() {
     let (a, b) = (node("a", KEY), node("b", KEY));
     connect(&a, &b);
-    wait_for("connection", || a.hub.peer_count() == 1 && b.hub.peer_count() == 1);
+    wait_for("connection", || {
+        a.hub.peer_count() == 1 && b.hub.peer_count() == 1
+    });
 
     a.clipboard.copy("from a");
     wait_for_clip(&b, "from a");
@@ -133,7 +136,7 @@ fn keeps_dialing_until_the_peer_appears() {
     let free_port = TcpListener::bind("127.0.0.1:0").unwrap();
     let address = free_port.local_addr().unwrap();
     drop(free_port);
-    a.hub.dial(Arc::new(Mutex::new(vec![address])));
+    a.hub.dial(Arc::new(Mutex::new(vec![address.to_string()])));
     sleep(Duration::from_millis(600));
     assert_eq!(a.hub.peer_count(), 0);
 
@@ -144,20 +147,33 @@ fn keeps_dialing_until_the_peer_appears() {
     wait_for("connection", || a.hub.peer_count() == 1);
 
     a.clipboard.copy("still works");
-    wait_for("clip", || clipboard.current().as_deref() == Some("still works"));
+    wait_for("clip", || {
+        clipboard.current().as_deref() == Some("still works")
+    });
 }
 
 /// Talks to a hub the way the iPhone app does.
-fn phone(to: &Node) -> (TcpStream, copyblip::protocol::Sealer, copyblip::protocol::Opener) {
+fn phone(
+    to: &Node,
+) -> (
+    TcpStream,
+    copyblip::protocol::Sealer,
+    copyblip::protocol::Opener,
+) {
     let mut stream = TcpStream::connect(to.address).unwrap();
-    stream.set_read_timeout(Some(Duration::from_secs(2))).unwrap();
+    stream
+        .set_read_timeout(Some(Duration::from_secs(2)))
+        .unwrap();
     let (mut sealer, mut opener) = handshake(&mut stream, &KEY, Role::Initiator).unwrap();
     let hello = Message::Hello {
         device: "phone".into(),
         name: "phone".into(),
     };
     sealer.send(&mut stream, &hello).unwrap();
-    assert!(matches!(opener.recv(&mut stream).unwrap(), Message::Hello { .. }));
+    assert!(matches!(
+        opener.recv(&mut stream).unwrap(),
+        Message::Hello { .. }
+    ));
     (stream, sealer, opener)
 }
 
@@ -185,7 +201,9 @@ fn latest_with_nothing_copied_sends_nothing() {
     let a = node("a", KEY);
     let (mut stream, mut sealer, mut opener) = phone(&a);
     sealer.send(&mut stream, &Message::Latest).unwrap();
-    stream.set_read_timeout(Some(Duration::from_millis(500))).unwrap();
+    stream
+        .set_read_timeout(Some(Duration::from_millis(500)))
+        .unwrap();
     assert!(opener.recv(&mut stream).is_err());
 }
 
@@ -228,4 +246,42 @@ fn text_already_on_the_clipboard_is_not_rewritten_or_forwarded() {
     // It still counts as the latest clip, so the phone sees itself as up to date.
     sealer.send(&mut stream, &Message::Latest).unwrap();
     assert_eq!(opener.recv(&mut stream).unwrap(), echo);
+}
+
+#[test]
+fn images_sync_and_are_returned_by_latest() {
+    let (a, b) = (node("a", KEY), node("b", KEY));
+    connect(&a, &b);
+    wait_for("connection", || b.hub.peer_count() == 1);
+    let png = b"\x89PNG pretend image bytes".to_vec();
+    a.clipboard.copy_image(&png);
+    wait_for("image", || {
+        b.clipboard.content() == Some(Content::Image(png.clone()))
+    });
+    settle();
+    assert_eq!(a.clipboard.writes(), 1);
+
+    let (mut stream, mut sealer, mut opener) = phone(&b);
+    sealer.send(&mut stream, &Message::Latest).unwrap();
+    assert!(
+        matches!(opener.recv(&mut stream).unwrap(), Message::Image { png: got, .. } if got == png)
+    );
+}
+
+#[test]
+fn unknown_message_types_keep_the_connection() {
+    let a = node("a", KEY);
+    let (mut stream, mut sealer, _) = phone(&a);
+    wait_for("phone", || a.hub.peer_count() == 1);
+    sealer.send(&mut stream, &Message::Unknown).unwrap();
+    sealer
+        .send(
+            &mut stream,
+            &Message::Clip {
+                id: "after".into(),
+                text: "still connected".into(),
+            },
+        )
+        .unwrap();
+    wait_for_clip(&a, "still connected");
 }

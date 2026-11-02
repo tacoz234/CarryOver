@@ -17,6 +17,19 @@ struct ContentView: View {
         .sheet(isPresented: $model.showingSetup, onDismiss: model.setupClosed) {
             SetupGuide()
         }
+        .onOpenURL { model.open($0) }
+        .alert(
+            model.group == nil ? "Join this CopyBlip group?" : "Switch to this CopyBlip group?",
+            isPresented: Binding(get: { model.pendingInvite != nil }, set: { if !$0 { model.pendingInvite = nil } }),
+            presenting: model.pendingInvite
+        ) { _ in
+            Button(model.group == nil ? "Join" : "Switch") { model.acceptInvite() }
+            Button("Cancel", role: .cancel) {}
+        } message: { invite in
+            let replaces = model.group == nil ? "" : " This replaces the group you're in now."
+            let relay = invite.relay.map { " It also uses the relay at \($0.base.host() ?? "")." } ?? ""
+            Text("Only join groups made on your own computers.\(replaces)\(relay)")
+        }
     }
 }
 
@@ -28,17 +41,17 @@ private struct JoinView: View {
     var body: some View {
         Form {
             Section {
-                TextField("Pairing code", text: $code, axis: .vertical)
+                TextField("Invite link or pairing code", text: $code, axis: .vertical)
                     .font(.body.monospaced())
                     .autocorrectionDisabled()
                     .textInputAutocapitalization(.never)
                 Button("Join") { invalid = !model.join(code: code) }
                     .disabled(code.isEmpty)
             } footer: {
-                Text("On your computer, run `copyblip pairing-code` and enter the code it prints.")
+                Text("On your computer, run `copyblip invite`, then scan the QR code with the Camera app. Or paste the link it prints here.")
             }
             if invalid {
-                Text("That code isn't valid. It should be 64 letters and numbers.")
+                Text("That isn't a valid invite link or pairing code.")
                     .foregroundStyle(.red)
             }
         }
@@ -62,14 +75,19 @@ private struct SyncView: View {
                 HStack {
                     Text("Send clipboard")
                     Spacer()
-                    PasteButton(payloadType: String.self) { strings in
-                        if let text = strings.first { model.send(text) }
+                    PasteButton(supportedContentTypes: [.plainText, .png, .image]) { providers in
+                        model.send(pasted: providers)
                     }
                     .labelStyle(.iconOnly)
                 }
                 Button("Get Latest from Computer", systemImage: "arrow.down.doc") { model.fetch() }
             }
             Section {
+                NavigationLink {
+                    AwayFromHomeView(model: model)
+                } label: {
+                    Label("Away From Home", systemImage: "globe")
+                }
                 Button("Setup Guide", systemImage: "questionmark.circle") { model.showingSetup = true }
                 Button("Leave Group", role: .destructive) { model.leave() }
             }
@@ -155,14 +173,14 @@ private struct StatusRow: View {
                 Label("Sent to \(names.joined(separator: ", "))", systemImage: "arrow.up.circle.fill")
                     .foregroundStyle(.green)
                     .font(.headline)
-                Text(preview).font(.callout).foregroundStyle(.secondary).lineLimit(3)
+                PreviewView(preview: preview)
             }
         case let .received(preview, name):
             VStack(alignment: .leading, spacing: 6) {
                 Label("Copied from \(name), ready to paste", systemImage: "arrow.down.circle.fill")
                     .foregroundStyle(.blue)
                     .font(.headline)
-                Text(preview).font(.callout).foregroundStyle(.secondary).lineLimit(3)
+                PreviewView(preview: preview)
             }
         case .upToDate:
             Label("Up to date", systemImage: "checkmark.circle.fill")
@@ -170,5 +188,79 @@ private struct StatusRow: View {
             Label(message, systemImage: "exclamationmark.triangle.fill")
                 .foregroundStyle(.orange)
         }
+    }
+}
+
+private struct PreviewView: View {
+    let preview: SyncModel.Preview
+
+    var body: some View {
+        switch preview {
+        case let .text(text):
+            Text(text).font(.callout).foregroundStyle(.secondary).lineLimit(3)
+        case let .image(image):
+            Image(uiImage: image)
+                .resizable()
+                .scaledToFit()
+                .frame(maxHeight: 160)
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+        }
+    }
+}
+
+private struct AwayFromHomeView: View {
+    let model: SyncModel
+    @State private var relayText = ""
+    @State private var relayInvalid = false
+    @State private var newAddress = ""
+    @State private var addressInvalid = false
+
+    var body: some View {
+        Form {
+            Section {
+                TextField("https://copyblip-relay.example.workers.dev", text: $relayText)
+                    .keyboardType(.URL)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                    .onSubmit { relayInvalid = !model.setRelay(relayText) }
+                if relayInvalid {
+                    Text("That isn't a relay address. It should start with https://.")
+                        .foregroundStyle(.red)
+                }
+            } header: {
+                Text("Relay")
+            } footer: {
+                Text("Works on any network. Use the same relay address as your computers. Leave empty to turn it off.")
+            }
+
+            Section {
+                ForEach(model.manualAddresses, id: \.self) { address in
+                    Text(address.description).font(.body.monospaced())
+                }
+                .onDelete { model.removeAddresses(at: $0) }
+                HStack {
+                    TextField("macmini or 100.64.0.1", text: $newAddress)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                        .onSubmit(add)
+                    Button("Add", action: add).disabled(newAddress.isEmpty)
+                }
+                if addressInvalid {
+                    Text("That isn't a computer name or address.").foregroundStyle(.red)
+                }
+            } header: {
+                Text("Computer Addresses")
+            } footer: {
+                Text("For Tailscale: with Tailscale on, add each computer's Tailscale name or 100.x address.")
+            }
+        }
+        .navigationTitle("Away From Home")
+        .onAppear { relayText = model.relay?.base.absoluteString ?? "" }
+        .onDisappear { _ = model.setRelay(relayText) }
+    }
+
+    private func add() {
+        addressInvalid = !model.addAddress(newAddress)
+        if !addressInvalid { newAddress = "" }
     }
 }

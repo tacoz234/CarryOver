@@ -5,12 +5,36 @@ import Foundation
 public enum Message: Equatable, Sendable {
     case hello(device: String, name: String)
     case clip(id: String, text: String)
+    case image(id: String, png: Data)
     case latest
     case ping
+    /// A message type from a newer version, skipped rather than ending the connection.
+    case unknown
+}
+
+/// What a copy holds.
+public enum Content: Equatable, Sendable {
+    case text(String)
+    /// PNG bytes.
+    case image(Data)
+
+    func message(id: String) -> Message {
+        switch self {
+        case let .text(text): .clip(id: id, text: text)
+        case let .image(png): .image(id: id, png: png)
+        }
+    }
+
+    var byteCount: Int {
+        switch self {
+        case let .text(text): text.utf8.count
+        case let .image(png): png.count
+        }
+    }
 }
 
 extension Message: Codable {
-    private enum Keys: String, CodingKey { case t, device, name, id, text }
+    private enum Keys: String, CodingKey { case t, device, name, id, text, png }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: Keys.self)
@@ -19,10 +43,12 @@ extension Message: Codable {
             self = .hello(device: try c.decode(String.self, forKey: .device), name: try c.decode(String.self, forKey: .name))
         case "clip":
             self = .clip(id: try c.decode(String.self, forKey: .id), text: try c.decode(String.self, forKey: .text))
+        case "image":
+            // JSONDecoder reads Data as base64, matching the desktop.
+            self = .image(id: try c.decode(String.self, forKey: .id), png: try c.decode(Data.self, forKey: .png))
         case "latest": self = .latest
         case "ping": self = .ping
-        case let other:
-            throw DecodingError.dataCorruptedError(forKey: .t, in: c, debugDescription: "unknown message \(other)")
+        default: self = .unknown
         }
     }
 
@@ -37,8 +63,13 @@ extension Message: Codable {
             try c.encode("clip", forKey: .t)
             try c.encode(id, forKey: .id)
             try c.encode(text, forKey: .text)
+        case let .image(id, png):
+            try c.encode("image", forKey: .t)
+            try c.encode(id, forKey: .id)
+            try c.encode(png, forKey: .png)
         case .latest: try c.encode("latest", forKey: .t)
         case .ping: try c.encode("ping", forKey: .t)
+        case .unknown: throw EncodingError.invalidValue(self, .init(codingPath: [], debugDescription: "unknown messages can't be sent"))
         }
     }
 }
@@ -75,6 +106,15 @@ public struct GroupKey: Sendable, Equatable {
     }
 
     public var pairingCode: String { bytes.hex }
+
+    /// The relay room for this group. Derived from the key, so only members can find it.
+    public var relayRoom: String {
+        HKDF<SHA256>.deriveKey(
+            inputKeyMaterial: SymmetricKey(data: bytes),
+            info: Data("copyblip v1 relay room".utf8),
+            outputByteCount: 16
+        ).withUnsafeBytes { Data($0) }.hex
+    }
 
     /// Non-secret tag advertised over mDNS so devices can skip other groups.
     public var tag: String {
@@ -120,9 +160,11 @@ public enum Handshake {
     }
 }
 
-/// Matches the desktop's limit; JSON escaping can grow text up to sixfold.
-public let maxFrame = 8 * 1024 * 1024
+/// Matches the desktop's limits. Leaves room for maxImage in base64, and
+/// maxText after JSON escaping, which can grow text up to sixfold.
+public let maxFrame = 24 * 1024 * 1024
 public let maxText = 1024 * 1024
+public let maxImage = 16 * 1024 * 1024
 private let tagLength = 16
 
 private func nonce(_ counter: UInt64) -> ChaChaPoly.Nonce {

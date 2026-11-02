@@ -3,7 +3,7 @@ import Network
 
 public struct Received: Equatable, Sendable {
     public let id: String
-    public let text: String
+    public let content: Content
     public let from: String
 }
 
@@ -16,6 +16,11 @@ public struct Sent: Equatable, Sendable {
 public struct Address: Codable, Hashable, Sendable {
     public let host: String
     public let port: UInt16
+
+    public init(host: String, port: UInt16) {
+        self.host = host
+        self.port = port
+    }
 
     var endpoint: NWEndpoint? {
         NWEndpoint.Port(rawValue: port).map { .hostPort(host: NWEndpoint.Host(host), port: $0) }
@@ -31,22 +36,34 @@ public struct SyncClient: Sendable {
     let name: String
     let remembered: [Address]
     let endpoints: EndpointSource
+    let relay: Relay?
 
-    public init(group: GroupKey, device: String, name: String, remembered: [Address] = [], endpoints: EndpointSource? = nil) {
+    /// `remembered` holds addresses to try before searching the network, such
+    /// as ones that worked last time and ones typed in for Tailscale.
+    public init(
+        group: GroupKey,
+        device: String,
+        name: String,
+        remembered: [Address] = [],
+        relay: Relay? = nil,
+        endpoints: EndpointSource? = nil
+    ) {
         self.group = group
         self.device = device
         self.name = name
         self.remembered = remembered
+        self.relay = relay
         self.endpoints = endpoints ?? { await Discovery.find(group: group) }
     }
 
-    /// Sends `text` to every device reached. Also returns the addresses that worked.
-    public func send(_ text: String) async throws -> (Sent, [Address]) {
-        guard text.utf8.count <= maxText else { throw SyncError.tooLarge }
+    /// Sends `content` to every device reached. Also returns the addresses that worked.
+    public func send(_ content: Content) async throws -> (Sent, [Address]) {
+        let limit = if case .image = content { maxImage } else { maxText }
+        guard content.byteCount <= limit else { throw SyncError.tooLarge }
         let id = Data((0..<16).map { _ in UInt8.random(in: .min ... .max) }).hex
         // Every device gets the same ID, so they apply it once even though it
         // arrives from more than one direction.
-        let clip = Message.clip(id: id, text: text)
+        let clip = content.message(id: id)
         let reached = try await reach { peer in
             try await peer.send(clip)
             await peer.finish()
@@ -61,10 +78,11 @@ public struct SyncClient: Sendable {
         let reached = try await reach(stopWhen: { $0 != nil }) { peer -> Received? in
             try await peer.send(.latest)
             // No reply means the device hasn't seen a copy yet.
-            guard case let .clip(id, text)? = try? await withTimeout(wait, { try await peer.receive() }) else {
-                return nil
+            switch try? await withTimeout(wait, { try await peer.receive() }) {
+            case let .clip(id, text)?: return Received(id: id, content: .text(text), from: peer.peerName)
+            case let .image(id, png)?: return Received(id: id, content: .image(png), from: peer.peerName)
+            default: return nil
             }
-            return Received(id: id, text: text, from: peer.peerName)
         }
         // Devices in a group hold the same latest clip, so the first answer will do.
         return (reached.lazy.compactMap(\.value).first, reached.compactMap(\.address))
@@ -76,39 +94,101 @@ public struct SyncClient: Sendable {
         let address: Address?
     }
 
-    /// Runs `body` against each device. Tries remembered addresses first and
-    /// only searches the network if none of them answer.
+    enum Target: Sendable {
+        case direct(NWEndpoint)
+        case relayed(URL)
+
+        func connection() -> PeerConnection {
+            switch self {
+            case let .direct(endpoint): PeerConnection(endpoint: endpoint)
+            case let .relayed(pipe): PeerConnection(pipe: pipe)
+            }
+        }
+    }
+
+    struct Attempt<T: Sendable>: Sendable {
+        var reached: [Reached<T>] = []
+        var failures: [Error] = []
+        var foundAny = false
+    }
+
+    /// How long to try direct connections before also trying the relay.
+    static let relayDelay: Duration = .milliseconds(800)
+
+    /// Runs `body` against each device. Tries direct connections first, and
+    /// the relay if those haven't worked shortly after.
     func reach<T: Sendable>(
         stopWhen: @escaping @Sendable (T) -> Bool = { _ in false },
         _ body: @escaping @Sendable (PeerConnection) async throws -> T
     ) async throws -> [Reached<T>] {
-        var failures: [Error] = []
-        if !remembered.isEmpty {
-            // Short timeout, because a stale address shouldn't delay the search.
-            let (reached, failed) = await each(remembered.compactMap(\.endpoint), timeout: .milliseconds(1500), stopWhen: stopWhen, body)
-            if !reached.isEmpty { return reached }
-            failures += failed
+        let combined = await withTaskGroup(of: Attempt<T>.self) { tasks in
+            tasks.addTask { await self.direct(stopWhen: stopWhen, body) }
+            if let relay {
+                tasks.addTask {
+                    guard (try? await Task.sleep(for: Self.relayDelay)) != nil else { return Attempt() }
+                    return await self.relayed(relay, stopWhen: stopWhen, body)
+                }
+            }
+            var combined = Attempt<T>()
+            for await attempt in tasks {
+                if !attempt.reached.isEmpty {
+                    // The other path is no longer needed.
+                    tasks.cancelAll()
+                    return attempt
+                }
+                combined.failures += attempt.failures
+                combined.foundAny = combined.foundAny || attempt.foundAny
+            }
+            return combined
         }
-        let found = await endpoints()
-        let (reached, failed) = await each(found, timeout: .seconds(4), stopWhen: stopWhen, body)
-        if !reached.isEmpty { return reached }
-        failures += failed
-        if failures.contains(where: { ($0 as? ProtocolError) == .authenticationFailed }) {
+        if !combined.reached.isEmpty { return combined.reached }
+        if combined.failures.contains(where: { ($0 as? ProtocolError) == .authenticationFailed }) {
             throw SyncError.wrongCode
         }
-        throw found.isEmpty ? SyncError.noDevices : SyncError.unreachable
+        throw combined.foundAny ? SyncError.unreachable : SyncError.noDevices
+    }
+
+    private func direct<T: Sendable>(
+        stopWhen: @escaping @Sendable (T) -> Bool,
+        _ body: @escaping @Sendable (PeerConnection) async throws -> T
+    ) async -> Attempt<T> {
+        var attempt = Attempt<T>()
+        if !remembered.isEmpty {
+            // Short timeout, because a stale address shouldn't delay the search.
+            let targets = remembered.compactMap(\.endpoint).map(Target.direct)
+            (attempt.reached, attempt.failures) = await each(targets, timeout: .milliseconds(1500), stopWhen: stopWhen, body)
+            attempt.foundAny = !attempt.reached.isEmpty
+            if !attempt.reached.isEmpty || Task.isCancelled { return attempt }
+        }
+        let found = await endpoints()
+        let (reached, failed) = await each(found.map(Target.direct), timeout: .seconds(4), stopWhen: stopWhen, body)
+        attempt.reached = reached
+        attempt.failures += failed
+        attempt.foundAny = attempt.foundAny || !found.isEmpty
+        return attempt
+    }
+
+    private func relayed<T: Sendable>(
+        _ relay: Relay,
+        stopWhen: @escaping @Sendable (T) -> Bool,
+        _ body: @escaping @Sendable (PeerConnection) async throws -> T
+    ) async -> Attempt<T> {
+        guard let devices = try? await relay.devices(group: group) else { return Attempt() }
+        let targets = devices.map { Target.relayed(relay.pipe(group: group, from: device, to: $0)) }
+        let (reached, failed) = await each(targets, timeout: .seconds(6), stopWhen: stopWhen, body)
+        return Attempt(reached: reached, failures: failed, foundAny: !devices.isEmpty)
     }
 
     private func each<T: Sendable>(
-        _ endpoints: [NWEndpoint],
+        _ targets: [Target],
         timeout: Duration,
         stopWhen: @escaping @Sendable (T) -> Bool,
         _ body: @escaping @Sendable (PeerConnection) async throws -> T
     ) async -> ([Reached<T>], [Error]) {
         await withTaskGroup(of: Result<Reached<T>, Error>.self) { tasks in
-            for endpoint in endpoints {
+            for target in targets {
                 tasks.addTask { [self] in
-                    let peer = PeerConnection(endpoint: endpoint)
+                    let peer = target.connection()
                     defer { peer.close() }
                     do {
                         try await peer.open(group: group, device: device, name: name, timeout: timeout)

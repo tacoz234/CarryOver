@@ -1,5 +1,6 @@
 #!/bin/sh
-# Installs copyblip as a login item that restarts if it stops.
+# Installs copyblip as a login item with a menu bar icon. It restarts if it
+# crashes, but Quit in its menu keeps it stopped until the next login.
 # Undo with uninstall-mac-agent.sh.
 set -eu
 label=com.coledeterman.copyblip
@@ -22,9 +23,10 @@ cat > "$plist" <<EOF
 <dict>
   <key>Label</key><string>$label</string>
   <key>ProgramArguments</key>
-  <array><string>$support/copyblip</string><string>run</string></array>
+  <array><string>$support/copyblip</string><string>run</string><string>--tray</string></array>
   <key>RunAtLoad</key><true/>
-  <key>KeepAlive</key><true/>
+  <key>KeepAlive</key><dict><key>SuccessfulExit</key><false/></dict>
+  <key>ProcessType</key><string>Interactive</string>
   <key>StandardErrorPath</key><string>$log</string>
 </dict>
 </plist>

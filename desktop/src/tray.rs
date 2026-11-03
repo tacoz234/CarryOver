@@ -180,6 +180,13 @@ pub fn run(app: Arc<App>, open_window: bool) -> ! {
             }
         }
 
+        if exit.is_none() && app.take_restart() {
+            match update::relaunch() {
+                Ok(code) => exit = Some(code),
+                Err(error) => eprintln!("couldn't restart in the new group: {error:#}"),
+            }
+        }
+
         if let Some(code) = exit {
             // Dropping the icon removes it right away on Windows, rather than
             // when the mouse next passes over it.

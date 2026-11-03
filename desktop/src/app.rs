@@ -5,7 +5,7 @@ use crate::hub::{Hub, unix_now};
 use crate::protocol::GroupKey;
 use crate::update::{self, State, Updater};
 use crate::{autostart, relay};
-use anyhow::{Context, Result, bail};
+use anyhow::{Context, Result, bail, ensure};
 use serde::Deserialize;
 use serde_json::{Value, json};
 use std::collections::HashMap;
@@ -29,6 +29,8 @@ pub struct App {
     /// Whether CopyBlip opens at login. Checking costs a process launch on
     /// Windows, too slow for every snapshot, so it's read once and kept here.
     login: AtomicBool,
+    /// Set after joining another group, which takes a fresh start.
+    restart: AtomicBool,
 }
 
 /// A request from the window.
@@ -46,6 +48,10 @@ pub enum Request {
     OpenLog,
     CheckUpdate,
     InstallUpdate,
+    CopyClip { id: String },
+    DeleteClip { id: String },
+    ClearHistory,
+    JoinGroup { invite: String },
 }
 
 impl App {
@@ -70,6 +76,7 @@ impl App {
             config: Mutex::new(config),
             dir,
             login: AtomicBool::new(autostart::is_enabled()),
+            restart: AtomicBool::new(false),
         });
         let peers = app.config.lock().unwrap().peers.clone();
         for peer in peers {
@@ -147,11 +154,68 @@ impl App {
             Request::OpenLog => open(&self.log)?,
             Request::CheckUpdate => self.updater.check_now(),
             Request::InstallUpdate => self.updater.install_now(),
+            Request::CopyClip { id } => self.hub.copy_again(&id)?,
+            Request::DeleteClip { id } => self.hub.delete_clip(&id),
+            Request::ClearHistory => self.hub.clear_history(),
+            Request::JoinGroup { invite } => {
+                let (key, relay) = config::parse_invite(&invite)
+                    .ok()
+                    .context("That isn't a valid invite link or pairing code.")?;
+                ensure!(key != self.key, "This computer is already in that group.");
+                self.save(|config| {
+                    config.set_group(&key);
+                    if relay.is_some() {
+                        config.relay = relay;
+                    }
+                })?;
+                // Devices and clips from the old group don't belong in the new one.
+                self.hub.forget_all();
+                self.hub.clear_history();
+                eprintln!("joined another group, restarting");
+                self.restart.store(true, Ordering::Relaxed);
+            }
         }
         Ok(())
     }
 
-    /// Everything the window shows, except the invite.
+    /// Whether CopyBlip should restart, and clears the request.
+    pub fn take_restart(&self) -> bool {
+        self.restart.swap(false, Ordering::Relaxed)
+    }
+
+    /// The Recent list for the window, with image thumbnails inline. Only
+    /// sent when `Hub::history_version` changes, since it can be large.
+    pub fn history(&self) -> Value {
+        use base64::Engine;
+        let items: Vec<Value> = self
+            .hub
+            .history()
+            .into_iter()
+            .map(|item| {
+                let image = item.text.is_none().then(|| {
+                    self.hub.history_thumbnail(&item.id).map(|png| {
+                        format!(
+                            "data:image/png;base64,{}",
+                            base64::engine::general_purpose::STANDARD.encode(png)
+                        )
+                    })
+                });
+                // The window only shows the start of long text.
+                let preview = item.text.map(|text| text.chars().take(600).collect::<String>());
+                json!({
+                    "id": item.id,
+                    "at": item.at,
+                    "direction": item.direction,
+                    "peers": item.peers,
+                    "text": preview,
+                    "image": image.flatten(),
+                })
+            })
+            .collect();
+        Value::from(items)
+    }
+
+    /// Everything the window shows, except the invite and recent clips.
     pub fn snapshot(&self) -> Value {
         let status = self.hub.status();
         let config = self.config.lock().unwrap();

@@ -67,7 +67,7 @@
   nav svg { width: 18px; height: 18px; flex: none; }
   nav .foot { margin-top: auto; padding: 0 10px; color: var(--muted); font-size: 12px; }
   main { flex: 1; overflow-y: auto; padding: 26px 30px 30px; }
-  section { display: none; max-width: 560px; }
+  section { display: none; max-width: 640px; }
   section.active { display: block; }
   h2 { font-size: 20px; margin: 0 0 4px; }
   h3 { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); margin: 26px 0 8px; }
@@ -79,11 +79,54 @@
   .row .grow { flex: 1; min-width: 0; }
   .row .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .row .sub { font-size: 12px; color: var(--muted); }
+  /* Purple device circles, like the iPhone app. */
   .avatar {
-    width: 36px; height: 36px; border-radius: 50%; flex: none;
-    background: var(--hover); display: grid; place-items: center;
+    width: 36px; height: 36px; border-radius: 50%; flex: none; position: relative;
+    background: linear-gradient(#8f52ff, #6402f9); color: #fff; display: grid; place-items: center;
   }
-  .avatar svg { width: 20px; height: 20px; }
+  .avatar svg { width: 19px; height: 19px; }
+  .badge {
+    position: absolute; right: -4px; bottom: -4px; width: 17px; height: 17px; border-radius: 50%;
+    border: 2px solid var(--card); display: grid; place-items: center; color: #fff;
+  }
+  .badge.sent { background: var(--green); }
+  .badge.received { background: #0a84ff; }
+  .badge svg { width: 9px; height: 9px; }
+  .heading { display: flex; align-items: baseline; justify-content: space-between; margin: 28px 0 12px; }
+  .heading h2 { margin: 0; }
+  .recent { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 20px 14px; }
+  .clip { position: relative; text-align: center; cursor: pointer; min-width: 0; }
+  .clip .preview {
+    height: 120px; border-radius: 10px; background: var(--card); border: 1px solid var(--line);
+    display: flex; align-items: center; justify-content: center; overflow: hidden; transition: border-color 0.15s;
+  }
+  .clip .preview img { max-width: 100%; max-height: 100%; object-fit: contain; }
+  .clip .preview.text {
+    align-items: flex-start; justify-content: flex-start; padding: 10px; text-align: left;
+    font-size: 12px; color: var(--muted); white-space: pre-wrap; word-break: break-word;
+  }
+  .clip:hover .preview { border-color: var(--accent); }
+  .clip .who {
+    width: 30px; height: 30px; border-radius: 50%; margin: -15px auto 5px; position: relative;
+    background: linear-gradient(#8f52ff, #6402f9); color: #fff; border: 3px solid var(--bg);
+    display: grid; place-items: center;
+  }
+  .clip .who svg { width: 14px; height: 14px; }
+  .clip .title { font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .clip .sub { font-size: 11.5px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .clip .delete {
+    all: unset; position: absolute; top: 6px; right: 6px; width: 22px; height: 22px; border-radius: 50%;
+    background: rgba(0, 0, 0, 0.55); color: #fff; display: grid; place-items: center; font-size: 12px;
+    visibility: hidden;
+  }
+  .clip:hover .delete { visibility: visible; }
+  .clip .delete:hover { background: var(--danger); }
+  .clip .copied {
+    position: absolute; top: 46px; left: 50%; transform: translateX(-50%); padding: 4px 12px;
+    border-radius: 12px; background: var(--text); color: var(--bg); font-size: 12px; font-weight: 600;
+    opacity: 0; transition: opacity 0.2s; pointer-events: none;
+  }
+  .clip.flash .copied { opacity: 0.9; }
   .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--green); flex: none; }
   /* Classes that set display would otherwise show hidden elements. */
   [hidden] { display: none !important; }
@@ -158,6 +201,13 @@
       <button class="btn primary" id="update-banner-install">Install</button>
     </div>
     <div class="card" id="device-list"></div>
+
+    <div class="heading">
+      <h2>Recent</h2>
+      <button class="link" id="clear-history" hidden>Clear</button>
+    </div>
+    <div class="recent" id="recent"></div>
+    <p class="muted" id="recent-empty">What this computer sends and receives shows up here. Click something to copy it again.</p>
   </section>
 
   <section id="add">
@@ -183,7 +233,7 @@
     <h3>Another computer</h3>
     <div class="card">
       <div class="row">
-        <div class="grow">Install CopyBlip, run <code>copyblip join</code>, and paste the invite link.</div>
+        <div class="grow">Install CopyBlip on it. When setup asks, choose Join and paste the invite link.</div>
         <button class="btn" id="show-link">Show Link</button>
       </div>
       <div class="secret" id="link" hidden></div>
@@ -239,6 +289,22 @@
       </form>
     </div>
 
+    <h3>Group</h3>
+    <div class="card">
+      <div class="row">
+        <div class="grow">Join a different group<div class="sub">Paste an invite link from a device in that group. This computer leaves its current group.</div></div>
+      </div>
+      <form class="row" id="join-form">
+        <input type="text" id="join-invite" placeholder="copyblip://join?code=…" spellcheck="false" autocomplete="off">
+        <button class="btn" type="submit">Join</button>
+      </form>
+      <div class="row" id="join-confirm" hidden>
+        <div class="grow">Leave this group and join the new one? CopyBlip restarts, and forgets this group's devices and recent clips.</div>
+        <button class="btn" id="join-cancel">Cancel</button>
+        <button class="btn primary" id="join-yes">Join</button>
+      </div>
+    </div>
+
     <h3>Troubleshooting</h3>
     <div class="card">
       <div class="row">
@@ -256,11 +322,47 @@
   let state = null;
   let invite = null;
 
+  let history = [];
+
+  const svg = (body) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${body}</svg>`;
   const icons = {
-    computer: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><rect x="3" y="4" width="18" height="12" rx="1.5"/><path d="M8 20h8M12 16v4"/></svg>',
-    phone: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><rect x="6" y="2" width="12" height="20" rx="2.5"/><path d="M11 18h2"/></svg>',
+    desktop: svg('<rect x="3" y="4" width="18" height="12" rx="1.5"/><path d="M8 20h8M12 16v4"/>'),
+    laptop: svg('<path d="M5 6a1 1 0 0 1 1-1h12a1 1 0 0 1 1 1v9H5z"/><path d="M2 18.5h20"/>'),
+    mini: svg('<rect x="3" y="8" width="18" height="7" rx="2"/><path d="M7 18h10"/>'),
+    tablet: svg('<rect x="5" y="2.5" width="14" height="19" rx="2"/><path d="M11 18.5h2"/>'),
+    phone: svg('<rect x="6.5" y="2" width="11" height="20" rx="2.5"/><path d="M11 18h2"/>'),
+    sent: svg('<path d="M5 12.5l4.5 4.5L19 7.5" stroke-width="3.5"/>'),
+    received: svg('<path d="M12 4v15M6 13l6 6 6-6" stroke-width="3.5"/>'),
+    up: svg('<path d="M12 20V5M6 11l6-6 6 6"/>'),
   };
-  const isPhone = (name) => /iphone|ipad|ipod/i.test(name);
+
+  // Matches the iPhone app: an icon guessed from the name, and names without
+  // .local or dashes.
+  function deviceIcon(name) {
+    const lower = name.toLowerCase();
+    if (lower.includes("iphone")) return icons.phone;
+    if (lower.includes("ipad")) return icons.tablet;
+    if (lower.includes("macbook") || lower.includes("laptop")) return icons.laptop;
+    if (lower.includes("mini")) return icons.mini;
+    return icons.desktop;
+  }
+  const displayName = (name) => name.replace(/\.local$/, "").replaceAll("-", " ");
+
+  function ago(at) {
+    const seconds = Math.max(0, Date.now() / 1000 - at);
+    if (seconds < 60) return "just now";
+    if (seconds < 3600) return `${Math.floor(seconds / 60)} min ago`;
+    if (seconds < 86400) return `${Math.floor(seconds / 3600)} hr ago`;
+    if (seconds < 172800) return "yesterday";
+    return `${Math.floor(seconds / 86400)} days ago`;
+  }
+
+  // Marks the devices the last sync went to or came from, for ten minutes.
+  function badgeFor(name) {
+    const last = history[0];
+    if (!last || Date.now() / 1000 - last.at > 600 || !last.peers.includes(name)) return null;
+    return last.direction;
+  }
 
   function el(tag, props = {}, children = []) {
     const node = document.createElement(tag);
@@ -269,10 +371,18 @@
     return node;
   }
 
-  function deviceRow(name, sub, connected, icon) {
-    const avatar = el("div", { className: "avatar", innerHTML: icon });
+  function deviceRow(name, sub, connected) {
+    const avatar = el("div", { className: "avatar", innerHTML: deviceIcon(name) });
+    const badge = badgeFor(name);
+    if (badge) {
+      avatar.append(el("span", {
+        className: `badge ${badge}`,
+        innerHTML: icons[badge],
+        title: badge === "sent" ? "Just sent to" : "Just received from",
+      }));
+    }
     const text = el("div", { className: "grow" }, [
-      el("div", { className: "name", textContent: name }),
+      el("div", { className: "name", textContent: displayName(name) }),
       el("div", { className: "sub", textContent: sub }),
     ]);
     const row = el("div", { className: "row" }, [avatar, text]);
@@ -282,9 +392,9 @@
 
   function renderDevices() {
     const list = $("device-list");
-    list.replaceChildren(deviceRow(state.name, "This computer", false, icons.computer));
+    list.replaceChildren(deviceRow(state.name, "This computer", false));
     for (const device of state.devices) {
-      const row = deviceRow(device.name, device.seen, device.connected, isPhone(device.name) ? icons.phone : icons.computer);
+      const row = deviceRow(device.name, device.seen, device.connected);
       if (!device.connected) {
         row.append(el("button", {
           className: "remove",
@@ -301,6 +411,64 @@
         el("button", { className: "link", textContent: "Add one", onclick: () => show("add") }),
       ]));
     }
+  }
+
+  function clipCard(item) {
+    const isImage = item.text === null;
+    const preview = isImage
+      ? el("div", { className: "preview" }, item.image ? el("img", { src: item.image, alt: "" }) : [])
+      : el("div", { className: "preview text", textContent: item.text });
+    const names = item.peers.map(displayName);
+    const sent = item.direction === "sent";
+    const who = sent
+      ? (names.length === 1 ? `Sent to ${names[0]}` : `Sent to ${names.length} devices`)
+      : `From ${names[0] ?? "a device"}`;
+    const avatarIcon = sent && item.peers.length !== 1 ? icons.up : deviceIcon(item.peers[0] ?? "");
+    const card = el("div", { className: "clip", title: "Click to copy again" }, [
+      preview,
+      el("div", { className: "who", innerHTML: avatarIcon }),
+      el("div", { className: "title", textContent: isImage ? "Image" : item.text.trim().split("\n")[0] }),
+      el("div", { className: "sub", textContent: `${who} · ${ago(item.at)}` }),
+      el("div", { className: "copied", textContent: "Copied" }),
+      el("button", {
+        className: "delete",
+        textContent: "✕",
+        title: "Remove from Recent",
+        onclick: (event) => {
+          event.stopPropagation();
+          send("deleteClip", { id: item.id });
+        },
+      }),
+    ]);
+    card.onclick = () => {
+      send("copyClip", { id: item.id });
+      card.classList.add("flash");
+      setTimeout(() => card.classList.remove("flash"), 1200);
+    };
+    return card;
+  }
+
+  // After a restart only the Recent list remembers the last sync.
+  function renderActivity() {
+    const last = history[0];
+    let text = "Nothing synced yet";
+    if (state && state.activity) {
+      text = `Last sync: ${state.activity}`;
+    } else if (last) {
+      const what = last.text === null ? "an image" : "text";
+      const names = last.peers.map(displayName);
+      const where = last.direction === "sent"
+        ? `Sent ${what} to ${names.length === 1 ? names[0] : `${names.length} devices`}`
+        : `Received ${what} from ${names[0] ?? "a device"}`;
+      text = `Last sync: ${where} · ${ago(last.at)}`;
+    }
+    $("activity").textContent = text;
+  }
+
+  function renderRecent() {
+    $("recent").replaceChildren(...history.map(clipCard));
+    $("recent-empty").hidden = history.length > 0;
+    $("clear-history").hidden = history.length === 0;
   }
 
   function renderPeers() {
@@ -355,7 +523,7 @@
   window.render = (next) => {
     state = next;
     $("version").textContent = `Version ${state.version}`;
-    $("activity").textContent = state.activity ? `Last sync: ${state.activity}` : "Nothing synced yet";
+    renderActivity();
     $("paused").hidden = !state.paused;
     $("pause").checked = state.paused;
     $("login").checked = state.login;
@@ -367,6 +535,21 @@
     renderPeers();
     renderUpdate();
   };
+
+  // Called by CopyBlip when the recent clips change.
+  window.setHistory = (items) => {
+    history = items;
+    renderRecent();
+    renderActivity();
+    if (state) renderDevices();
+  };
+
+  // Keeps "5 min ago" and the sync badges current.
+  setInterval(() => {
+    renderRecent();
+    renderActivity();
+    if (state) renderDevices();
+  }, 30000);
 
   window.setInvite = (svg, link) => {
     invite = { svg, link };
@@ -422,6 +605,23 @@
     delete $("relay").dataset.dirty;
     send("relay", { url: $("relay").value });
     $("relay").blur();
+  };
+  $("clear-history").onclick = () => send("clearHistory");
+  $("join-form").onsubmit = (event) => {
+    event.preventDefault();
+    if (!$("join-invite").value.trim()) return;
+    $("join-form").hidden = true;
+    $("join-confirm").hidden = false;
+  };
+  $("join-cancel").onclick = () => {
+    $("join-confirm").hidden = true;
+    $("join-form").hidden = false;
+  };
+  $("join-yes").onclick = () => {
+    send("joinGroup", { invite: $("join-invite").value });
+    $("join-confirm").hidden = true;
+    $("join-form").hidden = false;
+    $("join-invite").value = "";
   };
   $("peer-form").onsubmit = (event) => {
     event.preventDefault();

@@ -1,12 +1,13 @@
 //! Moves clips between the local clipboard and connected peers.
 use crate::clipboard::{Clipboard, Content};
+use crate::history::{self, Direction, History};
 use crate::protocol::{GroupKey, MAX_IMAGE, MAX_TEXT, Message, Opener, Role, Sealer, handshake};
-use anyhow::{Result, bail};
+use anyhow::{Context, Result, bail};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
 use std::net::{Shutdown, TcpListener, TcpStream, ToSocketAddrs};
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::mpsc::{self, RecvTimeoutError, Sender};
 use std::sync::{Arc, Mutex};
 use std::thread;
@@ -158,6 +159,9 @@ pub struct Hub {
     state: Mutex<State>,
     paused: AtomicBool,
     devices: Mutex<Devices>,
+    /// Recent clips, kept only once `remember_history` is called.
+    history: Mutex<Option<History>>,
+    history_version: AtomicU64,
 }
 
 impl Hub {
@@ -175,6 +179,8 @@ impl Hub {
             state: Mutex::new(State::default()),
             paused: AtomicBool::new(false),
             devices: Mutex::new(Devices::default()),
+            history: Mutex::new(None),
+            history_version: AtomicU64::new(0),
         })
     }
 
@@ -209,6 +215,100 @@ impl Hub {
         let mut devices = self.devices.lock().unwrap();
         devices.known.remove(device);
         devices.save();
+    }
+
+    /// Drops every device, for joining a different group.
+    pub fn forget_all(&self) {
+        let mut devices = self.devices.lock().unwrap();
+        devices.known.clear();
+        devices.save();
+    }
+
+    /// Loads and keeps saving recent clips in `folder`.
+    pub fn remember_history(&self, folder: PathBuf) {
+        *self.history.lock().unwrap() = Some(History::open(folder));
+        self.history_version.fetch_add(1, Ordering::Relaxed);
+    }
+
+    /// Changes whenever the recent clips do, so the window only redraws them
+    /// then.
+    pub fn history_version(&self) -> u64 {
+        self.history_version.load(Ordering::Relaxed)
+    }
+
+    /// Newest first.
+    pub fn history(&self) -> Vec<history::Item> {
+        self.history
+            .lock()
+            .unwrap()
+            .as_ref()
+            .map(|history| history.items().to_vec())
+            .unwrap_or_default()
+    }
+
+    pub fn history_thumbnail(&self, id: &str) -> Option<Vec<u8>> {
+        self.history.lock().unwrap().as_ref()?.thumbnail(id)
+    }
+
+    fn change_history(&self, change: impl FnOnce(&mut History)) {
+        if let Some(history) = self.history.lock().unwrap().as_mut() {
+            change(history);
+        }
+        self.history_version.fetch_add(1, Ordering::Relaxed);
+    }
+
+    pub fn delete_clip(&self, id: &str) {
+        self.change_history(|history| history.delete(id));
+    }
+
+    pub fn clear_history(&self) {
+        self.change_history(History::clear);
+    }
+
+    /// Puts a recent clip back on this clipboard, without sending it again.
+    pub fn copy_again(&self, id: &str) -> Result<()> {
+        let content = self
+            .history
+            .lock()
+            .unwrap()
+            .as_ref()
+            .and_then(|history| history.content(id))
+            .context("that clip is gone")?;
+        self.state.lock().unwrap().last_hash = Some(content.digest());
+        self.clipboard.write(&content)
+    }
+
+    /// Adds a clip to the recent list. Call without holding `state`, since
+    /// saving a big image takes a moment.
+    fn record(&self, id: &str, direction: Direction, peers: Vec<String>, content: &Content) {
+        let Some(folder) = self
+            .history
+            .lock()
+            .unwrap()
+            .as_ref()
+            .map(|history| history.folder().to_owned())
+        else {
+            return;
+        };
+        let text = match content {
+            Content::Text(text) => Some(text.clone()),
+            Content::Image(png) => {
+                if let Err(error) = history::save_image(&folder, id, png) {
+                    eprintln!("couldn't keep the image in recent clips: {error:#}");
+                    return;
+                }
+                None
+            }
+        };
+        self.change_history(|history| {
+            history.add(history::Item {
+                id: id.to_owned(),
+                at: unix_now(),
+                direction,
+                peers,
+                text,
+            });
+        });
     }
 
     pub fn status(&self) -> Status {
@@ -310,9 +410,17 @@ impl Hub {
             description: format!("Sent {}", content.kind()),
             at: Instant::now(),
         });
-        let message = to_message(id, content);
+        let mut peers: Vec<String> = state.peers.values().map(|peer| peer.name.clone()).collect();
+        peers.sort();
+        peers.dedup();
+        let message = to_message(id.clone(), content.clone());
         state.broadcast(&message, None);
         state.last_clip = Some(message);
+        drop(state);
+        // Copies that reached nobody stay off the list, like on the iPhone.
+        if !peers.is_empty() {
+            self.record(&id, Direction::Sent, peers, &content);
+        }
     }
 
     fn remote_clip(&self, connection: u64, id: String, content: Content) {
@@ -324,7 +432,7 @@ impl Hub {
             return;
         }
         let digest = content.digest();
-        let message = to_message(id, content.clone());
+        let message = to_message(id.clone(), content.clone());
         if state.last_hash == Some(digest) {
             // Already on this clipboard, e.g. the phone sending back something it
             // got through Universal Clipboard. Every device that set last_hash
@@ -350,6 +458,7 @@ impl Hub {
         if let Err(error) = self.clipboard.write(&content) {
             eprintln!("could not write clipboard: {error:#}");
         }
+        self.record(&id, Direction::Received, vec![from], &content);
     }
 
     pub fn serve(self: &Arc<Self>, listener: TcpListener) {

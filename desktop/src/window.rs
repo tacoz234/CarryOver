@@ -20,6 +20,8 @@ pub struct Window {
     window: TaoWindow,
     webview: WebView,
     shown: Option<Value>,
+    /// The `Hub::history_version` last sent.
+    history_shown: Option<u64>,
     /// The page to show once loaded.
     tab: Option<&'static str>,
 }
@@ -34,6 +36,7 @@ impl Window {
             .with_title("CopyBlip")
             .with_inner_size(LogicalSize::new(760.0, 540.0))
             .with_min_inner_size(LogicalSize::new(600.0, 420.0))
+            .with_window_icon(icon())
             .build(target)?;
         let webview = WebViewBuilder::new()
             .with_html(PAGE)
@@ -46,6 +49,7 @@ impl Window {
             window,
             webview,
             shown: None,
+            history_shown: None,
             tab,
         })
     }
@@ -56,6 +60,7 @@ impl Window {
             eprintln!("couldn't draw the invite: {error:#}");
         }
         self.shown = None;
+        self.history_shown = None;
         self.refresh(app);
         if let Some(tab) = self.tab.take() {
             self.show(tab);
@@ -78,6 +83,11 @@ impl Window {
         if self.shown.as_ref() != Some(&snapshot) {
             self.call("render", std::slice::from_ref(&snapshot));
             self.shown = Some(snapshot);
+        }
+        let version = app.hub.history_version();
+        if self.history_shown != Some(version) {
+            self.call("setHistory", &[app.history()]);
+            self.history_shown = Some(version);
         }
     }
 
@@ -118,6 +128,23 @@ impl Window {
             eprintln!("couldn't update the window: {error}");
         }
     }
+}
+
+/// The app icon for the title bar and taskbar. macOS doesn't show window
+/// icons, so it's skipped there.
+fn icon() -> Option<tao::window::Icon> {
+    if !cfg!(windows) {
+        return None;
+    }
+    let image = image::load_from_memory_with_format(
+        include_bytes!("../../assets/icon-rounded.png"),
+        image::ImageFormat::Png,
+    )
+    .ok()?
+    .resize(128, 128, image::imageops::FilterType::Lanczos3)
+    .to_rgba8();
+    let (width, height) = image.dimensions();
+    tao::window::Icon::from_rgba(image.into_raw(), width, height).ok()
 }
 
 /// The invite as a QR code, black on white with a quiet zone, in SVG.

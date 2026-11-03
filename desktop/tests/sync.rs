@@ -285,3 +285,50 @@ fn unknown_message_types_keep_the_connection() {
         .unwrap();
     wait_for_clip(&a, "still connected");
 }
+
+#[test]
+fn recent_clips_are_kept_and_copying_one_again_does_not_send_it() {
+    let (a, b) = (node("a", KEY), node("b", KEY));
+    let folders = ["a", "b"].map(|name| {
+        let folder = std::env::temp_dir().join(format!("copyblip-recent-{name}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&folder);
+        folder
+    });
+    a.hub.remember_history(folders[0].clone());
+    b.hub.remember_history(folders[1].clone());
+    connect(&a, &b);
+    wait_for("connection", || a.hub.peer_count() == 1 && b.hub.peer_count() == 1);
+
+    a.clipboard.copy("first");
+    wait_for_clip(&b, "first");
+    wait_for("b to keep it", || !b.hub.history().is_empty());
+    settle();
+    a.clipboard.copy("second");
+    wait_for_clip(&b, "second");
+    wait_for("b to keep both", || b.hub.history().len() == 2);
+    settle();
+
+    let sent = a.hub.history();
+    assert_eq!(sent.len(), 2);
+    assert_eq!(sent[0].text.as_deref(), Some("second"));
+    assert_eq!(sent[0].direction, copyblip::history::Direction::Sent);
+    assert_eq!(sent[0].peers, ["b"]);
+    let received = b.hub.history();
+    assert_eq!(received[0].direction, copyblip::history::Direction::Received);
+    assert_eq!(received[0].peers, ["a"]);
+
+    // Copying "first" again on b changes only b's clipboard.
+    let writes = a.clipboard.writes();
+    b.hub.copy_again(&received[1].id).unwrap();
+    assert_eq!(b.clipboard.current().as_deref(), Some("first"));
+    settle();
+    assert_eq!(a.clipboard.current().as_deref(), Some("second"));
+    assert_eq!(a.clipboard.writes(), writes);
+    assert_eq!(b.hub.history().len(), 2);
+
+    b.hub.clear_history();
+    assert!(b.hub.history().is_empty());
+    for folder in folders {
+        let _ = std::fs::remove_dir_all(folder);
+    }
+}

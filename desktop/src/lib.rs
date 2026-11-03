@@ -5,6 +5,7 @@ pub mod autostart;
 pub mod clipboard;
 pub mod config;
 pub mod discovery;
+pub mod history;
 pub mod hub;
 pub mod protocol;
 pub mod relay;

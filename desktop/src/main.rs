@@ -343,6 +343,7 @@ fn main() -> Result<()> {
                 #[cfg(windows)]
                 let log = dir.join("copyblip.log");
                 hub.remember_devices(dir.join("devices.json"));
+                hub.remember_history(dir.join("history"));
                 let app = copyblip::app::App::start(hub, dir, config, relay_url, log)?;
                 copyblip::tray::run(app, window);
             }

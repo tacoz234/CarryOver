@@ -55,6 +55,11 @@ impl Config {
         write_private(&dir.join("config.json"), &serde_json::to_vec_pretty(self)?)
     }
 
+    /// Moves this device to another group, keeping its other settings.
+    pub fn set_group(&mut self, key: &GroupKey) {
+        self.group_key = hex::encode(key);
+    }
+
     pub fn key(&self) -> Result<GroupKey> {
         parse_code(&self.group_key)
     }

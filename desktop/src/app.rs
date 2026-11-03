@@ -10,6 +10,7 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 use std::collections::HashMap;
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -25,6 +26,9 @@ pub struct App {
     relay: Mutex<Option<relay::Handle>>,
     /// Saved peers being dialed. Emptying a list stops its dialer.
     peers: Mutex<HashMap<String, Targets>>,
+    /// Whether CopyBlip opens at login. Checking costs a process launch on
+    /// Windows, too slow for every snapshot, so it's read once and kept here.
+    login: AtomicBool,
 }
 
 /// A request from the window.
@@ -65,6 +69,7 @@ impl App {
             peers: Mutex::new(HashMap::new()),
             config: Mutex::new(config),
             dir,
+            login: AtomicBool::new(autostart::is_enabled()),
         });
         let peers = app.config.lock().unwrap().peers.clone();
         for peer in peers {
@@ -108,7 +113,10 @@ impl App {
         match request {
             Request::Ready => {}
             Request::Pause { on } => self.hub.set_paused(on),
-            Request::Login { on } => autostart::set_enabled(on)?,
+            Request::Login { on } => {
+                autostart::set_enabled(on)?;
+                self.login.store(on, Ordering::Relaxed);
+            }
             Request::AutoUpdate { on } => {
                 self.save(|config| config.auto_update = on)?;
                 self.updater.set_automatic(on);
@@ -183,7 +191,7 @@ impl App {
             "version": update::VERSION,
             "name": self.hub.name(),
             "paused": status.paused,
-            "login": autostart::is_enabled(),
+            "login": self.login.load(Ordering::Relaxed),
             "autoUpdate": config.auto_update,
             "relay": config.relay.as_deref().map(https).unwrap_or_default(),
             "peers": config.peers,

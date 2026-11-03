@@ -125,7 +125,8 @@ pub fn normalize_relay(url: &str) -> Result<String> {
 /// Accepts an invite link or a bare pairing code. Returns the key and the
 /// relay, if the link named one.
 pub fn parse_invite(text: &str) -> Result<(GroupKey, Option<String>)> {
-    let text = text.trim();
+    // PowerShell starts text piped to a program with a byte order mark.
+    let text = text.trim().trim_start_matches('\u{feff}');
     let Some(query) = text.strip_prefix("copyblip://join?") else {
         return Ok((parse_code(text)?, None));
     };
@@ -239,6 +240,7 @@ mod tests {
             ([7; 32], Some("wss://relay.example.dev"))
         );
         assert_eq!(parse_invite(&hex::encode([7u8; 32])).unwrap().0, [7; 32]);
+        assert_eq!(parse_invite(&format!("\u{feff}{link}\r\n")).unwrap().0, [7; 32]);
         assert!(parse_invite("copyblip://join?relay=https://x.dev").is_err());
         assert!(parse_invite("copyblip://join?code=abc").is_err());
     }

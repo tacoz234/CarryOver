@@ -27,11 +27,11 @@ copyblip invite        # shows a QR code to scan with an iPhone
 copyblip run           # on every computer
 ```
 
-For the iPhone, open `ios/CopyBlip.xcodeproj` in Xcode and run it on your phone, then enter the pairing code and follow the [setup guide](docs/iphone-setup.md). Opening the app sends your iPhone clipboard if you copied something new, and otherwise gets the latest copy from your other devices.
+For the iPhone, open `ios/CopyBlip.xcodeproj` in Xcode and run it on your phone, then enter the pairing code and follow the [setup guide](docs/iphone-setup.md). Opening the app sends your iPhone clipboard if you copied something new, and otherwise gets the latest copy from your other devices. Its main screen shows the devices you sync with and a Recent list of what you sent and received; tap an item to copy it again.
 
 On a Mac, `desktop/scripts/install-mac-agent.sh` keeps the agent running as a login item with a menu bar icon, and `uninstall-mac-agent.sh` removes it. The log is in `~/Library/Logs/CopyBlip.log`.
 
-For a PC, `desktop/scripts/package-windows.sh` builds a zip that's already joined to this Mac's group. On the PC, run `setup.cmd` from it. CopyBlip then appears in the notification area.
+For a PC, `desktop/scripts/package-windows.ps1` (on a PC) or `package-windows.sh` (on a Mac) builds a zip. On the PC, run `setup.cmd` from it. It asks whether to join an existing group, using the invite link from any computer in it (**Add a Device** in its window), or to start a new one, and installs the WebView2 runtime if the PC lacks it. CopyBlip then appears in the notification area. Pass `-WithGroup` or `--with-group` to build a zip that's already joined to the building computer's group.
 
 The menu bar and notification area icons show what's connected and what last synced. **Open CopyBlip…** in their menu opens the main window (on Windows, clicking the icon does too), which has:
 

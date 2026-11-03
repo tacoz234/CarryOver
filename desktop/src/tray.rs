@@ -39,6 +39,9 @@ pub fn run(app: Arc<App>, open_window: bool) -> ! {
         use tao::platform::macos::{ActivationPolicy, EventLoopExtMacOS};
         event_loop.set_activation_policy(ActivationPolicy::Accessory);
     }
+    // Raw mouse and keyboard input isn't used, and on Windows each mouse
+    // movement would otherwise wake the loop, which can stall scrolling.
+    event_loop.set_device_event_filter(tao::event_loop::DeviceEventFilter::Always);
     let proxy = event_loop.create_proxy();
 
     let items = Items {

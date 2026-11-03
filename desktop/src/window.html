@@ -85,6 +85,8 @@
   }
   .avatar svg { width: 20px; height: 20px; }
   .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--green); flex: none; }
+  /* Classes that set display would otherwise show hidden elements. */
+  [hidden] { display: none !important; }
   .banner { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; margin: 14px 0; display: flex; gap: 12px; align-items: center; }
   .banner .grow { flex: 1; }
   button.btn {

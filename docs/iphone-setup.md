@@ -5,7 +5,7 @@ Once set up, opening CopyBlip is all it takes:
 - **You copied something on the iPhone:** CopyBlip sends it to your computers.
 - **Otherwise:** CopyBlip gets whatever you last copied on a computer and puts it on the iPhone clipboard.
 
-Then paste as usual. The app shows this guide the first time it opens, and again from **Setup Guide** on its main screen.
+Then paste as usual. The app shows this guide the first time it opens, and again from **Setup Guide** in Settings (the gear button).
 
 ## 1. Allow pasting without asking
 

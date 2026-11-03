@@ -23,9 +23,49 @@ final class SyncModel {
         case image(UIImage)
     }
 
+    /// A device this iPhone has synced with, for the device grid.
+    struct Device: Codable, Hashable, Identifiable {
+        /// As the device reports it, such as coles-Mac-Mini.local.
+        let name: String
+        var lastSeen: Date
+        var id: String { name }
+    }
+
+    /// A clip this iPhone sent or received, for the Recent list.
+    struct HistoryItem: Codable, Identifiable, Equatable {
+        enum Direction: String, Codable { case sent, received }
+        let id: String
+        let date: Date
+        let direction: Direction
+        let peers: [String]
+        /// Nil for images, which are saved as files named after the ID.
+        let text: String?
+    }
+
     private(set) var status = Status.idle
     private(set) var group: GroupKey?
     var showingSetup = false
+
+    /// Most recently seen first.
+    private(set) var devices: [Device] = [] {
+        didSet { defaults.set(try? JSONEncoder().encode(devices), forKey: "devices") }
+    }
+
+    /// Newest first, up to `historyLimit`.
+    private(set) var history: [HistoryItem] = [] {
+        didSet { try? JSONEncoder().encode(history).write(to: Self.historyIndex, options: .atomic) }
+    }
+
+    private static let historyLimit = 24
+    private static let historyFolder: URL = {
+        let folder = URL.applicationSupportDirectory.appending(path: "History", directoryHint: .isDirectory)
+        try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        return folder
+    }()
+    private static var historyIndex: URL { historyFolder.appending(path: "history.json") }
+    private static func imageFile(_ id: String) -> URL { historyFolder.appending(path: "\(id).png") }
+    /// Decoded once, since full-size images can be several megabytes.
+    @ObservationIgnored private var thumbnails: [String: UIImage] = [:]
     private var running: Task<Void, Never>?
     /// System alerts, including the paste prompt, make the app inactive and then
     /// active again. Only a real open, from launch or the background, should sync.
@@ -45,6 +85,10 @@ final class SyncModel {
         manualAddresses = defaults.data(forKey: "manualAddresses")
             .flatMap { try? JSONDecoder().decode([Address].self, from: $0) } ?? []
         relay = defaults.string(forKey: "relay").flatMap(Relay.init(string:))
+        devices = defaults.data(forKey: "devices")
+            .flatMap { try? JSONDecoder().decode([Device].self, from: $0) } ?? []
+        history = (try? Data(contentsOf: Self.historyIndex))
+            .flatMap { try? JSONDecoder().decode([HistoryItem].self, from: $0) } ?? []
         #if DEBUG
         // Lets scripts pair a simulator without typing the code.
         if let code = ProcessInfo.processInfo.environment["COPYBLIP_PAIRING_CODE"] {
@@ -159,7 +203,85 @@ final class SyncModel {
         Keychain.delete()
         group = nil
         addresses = []
+        devices = []
+        clearHistory()
         status = .idle
+    }
+
+    /// The link that adds a device to this group, as a QR code or pasted.
+    var inviteLink: String? {
+        guard let group else { return nil }
+        var link = "copyblip://join?code=\(group.pairingCode)"
+        if let relay { link += "&relay=\(relay.base.absoluteString)" }
+        return link
+    }
+
+    func forgetDevices(at offsets: IndexSet) {
+        devices.remove(atOffsets: offsets)
+    }
+
+    private func record(_ direction: HistoryItem.Direction, _ content: Content, id: String, peers: [String]) {
+        let now = Date()
+        for name in peers {
+            devices.removeAll { $0.name == name }
+            devices.insert(Device(name: name, lastSeen: now), at: 0)
+        }
+        var text: String?
+        switch content {
+        case let .text(value): text = value
+        case let .image(png): try? png.write(to: Self.imageFile(id), options: .atomic)
+        }
+        var items = history.filter { $0.id != id }
+        items.insert(HistoryItem(id: id, date: now, direction: direction, peers: peers, text: text), at: 0)
+        for old in items.dropFirst(Self.historyLimit) { removeFiles(of: old) }
+        history = Array(items.prefix(Self.historyLimit))
+    }
+
+    private func removeFiles(of item: HistoryItem) {
+        try? FileManager.default.removeItem(at: Self.imageFile(item.id))
+        thumbnails[item.id] = nil
+    }
+
+    func delete(_ item: HistoryItem) {
+        removeFiles(of: item)
+        history.removeAll { $0.id == item.id }
+    }
+
+    func clearHistory() {
+        history.forEach(removeFiles)
+        history = []
+    }
+
+    /// A small copy of an image clip, or nil for text.
+    func thumbnail(for item: HistoryItem) -> UIImage? {
+        guard item.text == nil else { return nil }
+        if let cached = thumbnails[item.id] { return cached }
+        guard let image = UIImage(contentsOfFile: Self.imageFile(item.id).path()) else { return nil }
+        let scale = min(1, 600 / max(image.size.width, image.size.height, 1))
+        let size = CGSize(width: image.size.width * scale, height: image.size.height * scale)
+        let thumbnail = image.preparingThumbnail(of: size) ?? image
+        thumbnails[item.id] = thumbnail
+        return thumbnail
+    }
+
+    /// Puts a past clip back on the clipboard. Marked as handled, so opening
+    /// the app doesn't send it out again.
+    func copy(_ item: HistoryItem) {
+        let board = UIPasteboard.general
+        if let text = item.text {
+            board.string = text
+        } else if let png = try? Data(contentsOf: Self.imageFile(item.id)) {
+            board.setItems([[UTType.png.identifier: png]])
+        } else {
+            return
+        }
+        handledChangeCount = board.changeCount
+    }
+
+    /// Copies text, such as the invite link, without sending it to the group.
+    func copyWithoutSending(_ text: String) {
+        UIPasteboard.general.string = text
+        handledChangeCount = UIPasteboard.general.changeCount
     }
 
     func appClosed() {
@@ -215,6 +337,7 @@ final class SyncModel {
             let (sent, addresses) = try await client.send(content)
             self.addresses = addresses
             self.lastClipID = sent.id
+            self.record(.sent, content, id: sent.id, peers: sent.to)
             return .sent(Self.preview(content), to: sent.to)
         }
     }
@@ -269,6 +392,7 @@ final class SyncModel {
             }
             self.lastClipID = received.id
             self.handledChangeCount = board.changeCount
+            self.record(.received, received.content, id: received.id, peers: [received.from])
             return .received(Self.preview(received.content), from: received.from)
         }
     }

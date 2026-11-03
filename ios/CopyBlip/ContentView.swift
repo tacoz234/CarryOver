@@ -1,3 +1,4 @@
+import CoreImage.CIFilterBuiltins
 import SwiftUI
 
 struct ContentView: View {
@@ -14,6 +15,7 @@ struct ContentView: View {
             }
             .navigationTitle("CopyBlip")
         }
+        .tint(Brand.accent)
         .sheet(isPresented: $model.showingSetup, onDismiss: model.setupClosed) {
             SetupGuide()
         }
@@ -48,7 +50,7 @@ private struct JoinView: View {
                 Button("Join") { invalid = !model.join(code: code) }
                     .disabled(code.isEmpty)
             } footer: {
-                Text("On your computer, run `copyblip invite`, then scan the QR code with the Camera app. Or paste the link it prints here.")
+                Text("On a computer in your group, open CopyBlip and choose **Add a Device**, then scan the QR code with the Camera app. Or paste its invite link here.")
             }
             if invalid {
                 Text("That isn't a valid invite link or pairing code.")
@@ -58,83 +60,485 @@ private struct JoinView: View {
     }
 }
 
+/// CopyBlip's purple, matching the computers' window.
+private enum Brand {
+    static let accent = Color(red: 0.42, green: 0.11, blue: 0.98)
+    static var gradient: LinearGradient {
+        LinearGradient(
+            colors: [Color(red: 0.56, green: 0.32, blue: 1.0), Color(red: 0.39, green: 0.01, blue: 0.98)],
+            startPoint: .top,
+            endPoint: .bottom
+        )
+    }
+}
+
+/// How a device's reported name is shown, and which icon it gets.
+private enum DeviceLook {
+    /// coles-Mac-Mini.local becomes coles Mac Mini.
+    static func name(_ name: String) -> String {
+        var name = name
+        if name.hasSuffix(".local") { name.removeLast(".local".count) }
+        return name.replacingOccurrences(of: "-", with: " ")
+    }
+
+    static func symbol(_ name: String) -> String {
+        let name = name.lowercased()
+        if name.contains("iphone") { return "iphone" }
+        if name.contains("ipad") { return "ipad" }
+        if name.contains("macbook") || name.contains("laptop") { return "laptopcomputer" }
+        if name.contains("mini") { return "macmini" }
+        if name.contains("mac") { return "desktopcomputer" }
+        return "pc"
+    }
+}
+
 private struct SyncView: View {
     let model: SyncModel
+    @State private var showingSettings = false
+    @State private var showingAddDevice = false
+    @State private var copiedID: String?
+
+    private let deviceColumns = Array(repeating: GridItem(.flexible(), spacing: 12, alignment: .top), count: 4)
+    private let recentColumns = Array(repeating: GridItem(.flexible(), spacing: 16, alignment: .top), count: 2)
 
     var body: some View {
-        List {
-            Section {
-                StatusRow(status: model.status)
-                    .padding(.vertical, 8)
-            } footer: {
-                Text("Just open CopyBlip. It sends what you copied on this iPhone, or gets what you last copied on your computer. Then paste as usual.")
-            }
-            Section("If something didn't sync") {
-                // The system paste button never shows the paste prompt, but iOS
-                // doesn't allow changing its label, so the row explains it.
-                HStack {
-                    Text("Send clipboard")
-                    Spacer()
-                    PasteButton(supportedContentTypes: [.plainText, .png, .image]) { providers in
-                        model.send(pasted: providers)
+        ScrollView {
+            VStack(alignment: .leading, spacing: 24) {
+                StatusCard(status: model.status)
+
+                LazyVGrid(columns: deviceColumns, spacing: 20) {
+                    ForEach(model.devices) { device in
+                        DeviceTile(device: device, badge: badge(for: device.name))
                     }
-                    .labelStyle(.iconOnly)
+                    ActionTile(title: "Add a Device", symbol: "plus") { showingAddDevice = true }
+                    ActionTile(title: "Get Latest", symbol: "arrow.down") { model.fetch() }
                 }
-                Button("Get Latest from Computer", systemImage: "arrow.down.doc") { model.fetch() }
+                if model.devices.isEmpty {
+                    Text("Your computers show up here after the first sync.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+
+                SendCard(model: model)
+
+                Divider()
+
+                recent
             }
-            Section {
-                NavigationLink {
-                    AwayFromHomeView(model: model)
+            .padding(.horizontal, 20)
+            .padding(.vertical, 12)
+        }
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .topBarLeading) {
+                Button("Settings", systemImage: "gearshape") { showingSettings = true }
+            }
+        }
+        .sheet(isPresented: $showingSettings) {
+            SettingsSheet(model: model)
+        }
+        .sheet(isPresented: $showingAddDevice) {
+            AddDeviceSheet(model: model)
+        }
+        .task(id: copiedID) {
+            guard copiedID != nil else { return }
+            try? await Task.sleep(for: .seconds(1.5))
+            copiedID = nil
+        }
+    }
+
+    @ViewBuilder private var recent: some View {
+        HStack {
+            Text("Recent").font(.title.bold())
+            Spacer()
+            if !model.history.isEmpty {
+                Menu {
+                    Button("Clear Recent", systemImage: "trash", role: .destructive) { model.clearHistory() }
                 } label: {
-                    Label("Away From Home", systemImage: "globe")
+                    Image(systemName: "ellipsis")
+                        .font(.title3)
+                        .frame(width: 44, height: 44)
                 }
-                Button("Setup Guide", systemImage: "questionmark.circle") { model.showingSetup = true }
-                Button("Leave Group", role: .destructive) { model.leave() }
             }
+        }
+        if model.history.isEmpty {
+            Text("What you send and receive shows up here. Tap something to copy it again.")
+                .font(.callout)
+                .foregroundStyle(.secondary)
+        } else {
+            LazyVGrid(columns: recentColumns, spacing: 24) {
+                ForEach(model.history) { item in
+                    Button {
+                        model.copy(item)
+                        copiedID = item.id
+                    } label: {
+                        RecentCard(item: item, thumbnail: model.thumbnail(for: item), copied: copiedID == item.id)
+                    }
+                    .buttonStyle(.plain)
+                    .contextMenu {
+                        Button("Copy", systemImage: "doc.on.doc") {
+                            model.copy(item)
+                            copiedID = item.id
+                        }
+                        Button("Delete", systemImage: "trash", role: .destructive) { model.delete(item) }
+                    }
+                }
+            }
+        }
+    }
+
+    /// Marks the devices the last sync went to or came from.
+    private func badge(for name: String) -> DeviceTile.Badge? {
+        switch model.status {
+        case let .sent(_, names) where names.contains(name): return DeviceTile.Badge.sent
+        case let .received(_, from) where from == name: return DeviceTile.Badge.received
+        default: return nil
         }
     }
 }
 
-private struct SetupGuide: View {
+private struct DeviceTile: View {
+    enum Badge { case sent, received }
+
+    let device: SyncModel.Device
+    let badge: Badge?
+
+    var body: some View {
+        VStack(spacing: 8) {
+            Circle()
+                .fill(Brand.gradient)
+                .overlay {
+                    Image(systemName: DeviceLook.symbol(device.name))
+                        .font(.system(size: 28, weight: .medium))
+                        .foregroundStyle(.white)
+                }
+                .overlay(alignment: .bottomTrailing) {
+                    if let badge {
+                        Image(systemName: badge == .sent ? "checkmark.circle.fill" : "arrow.down.circle.fill")
+                            .font(.title3)
+                            .foregroundStyle(Color.white, badge == .sent ? Color.green : Color.blue)
+                            .background(Circle().fill(Color(.systemBackground)).padding(-2))
+                            .transition(.scale.combined(with: .opacity))
+                    }
+                }
+                .aspectRatio(1, contentMode: .fit)
+                .animation(.spring, value: badge)
+            Text(DeviceLook.name(device.name))
+                .font(.footnote)
+                .multilineTextAlignment(.center)
+                .lineLimit(2)
+        }
+        .accessibilityElement(children: .combine)
+    }
+}
+
+private struct ActionTile: View {
+    let title: String
+    let symbol: String
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            VStack(spacing: 8) {
+                Circle()
+                    .fill(Color(.secondarySystemFill))
+                    .overlay {
+                        Image(systemName: symbol)
+                            .font(.system(size: 26, weight: .semibold))
+                            .foregroundStyle(Brand.accent)
+                    }
+                    .aspectRatio(1, contentMode: .fit)
+                Text(title)
+                    .font(.footnote)
+                    .multilineTextAlignment(.center)
+                    .lineLimit(2)
+                    .foregroundStyle(.primary)
+            }
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+/// The system paste button never shows the paste prompt, but iOS doesn't
+/// allow changing its label, so the card explains it.
+private struct SendCard: View {
+    let model: SyncModel
+
+    var body: some View {
+        HStack(spacing: 12) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Send Clipboard").font(.headline)
+                Text("If what you copied didn't send when you opened CopyBlip.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            Spacer()
+            PasteButton(supportedContentTypes: [.plainText, .png, .image]) { providers in
+                model.send(pasted: providers)
+            }
+            .labelStyle(.iconOnly)
+            .buttonBorderShape(.circle)
+            .tint(Brand.accent)
+        }
+        .padding(14)
+        .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 16))
+    }
+}
+
+private struct RecentCard: View {
+    let item: SyncModel.HistoryItem
+    let thumbnail: UIImage?
+    let copied: Bool
+
+    var body: some View {
+        VStack(spacing: 6) {
+            preview
+                .frame(maxWidth: .infinity)
+                .frame(height: 150)
+                .overlay {
+                    if copied {
+                        Label("Copied", systemImage: "checkmark")
+                            .font(.subheadline.bold())
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 6)
+                            .background(.ultraThinMaterial, in: Capsule())
+                            .transition(.opacity)
+                    }
+                }
+                .animation(.easeOut(duration: 0.2), value: copied)
+                .overlay(alignment: .bottom) {
+                    Circle()
+                        .fill(Brand.gradient)
+                        .frame(width: 36, height: 36)
+                        .overlay {
+                            Image(systemName: avatarSymbol)
+                                .font(.system(size: 15, weight: .semibold))
+                                .foregroundStyle(.white)
+                        }
+                        .overlay(Circle().stroke(Color(.systemBackground), lineWidth: 3))
+                        .offset(y: 18)
+                }
+                .padding(.bottom, 18)
+            Text(title)
+                .font(.subheadline)
+                .lineLimit(2)
+                .multilineTextAlignment(.center)
+            Text(caption)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+        }
+        .contentShape(Rectangle())
+    }
+
+    @ViewBuilder private var preview: some View {
+        if let thumbnail {
+            Image(uiImage: thumbnail)
+                .resizable()
+                .scaledToFit()
+                .clipShape(RoundedRectangle(cornerRadius: 10))
+                .shadow(color: .black.opacity(0.12), radius: 4, y: 1)
+        } else {
+            RoundedRectangle(cornerRadius: 10)
+                .fill(Color(.secondarySystemBackground))
+                .overlay(alignment: .topLeading) {
+                    Text(item.text ?? "An image")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(7)
+                        .padding(10)
+                }
+        }
+    }
+
+    private var avatarSymbol: String {
+        if item.direction == .sent, item.peers.count != 1 { return "arrow.up" }
+        return item.peers.first.map(DeviceLook.symbol) ?? "questionmark"
+    }
+
+    private var title: String {
+        guard let text = item.text else { return "Image" }
+        let line = text.split(whereSeparator: \.isNewline).first.map(String.init) ?? text
+        return line.trimmingCharacters(in: .whitespaces)
+    }
+
+    private var caption: String {
+        let names = item.peers.map(DeviceLook.name)
+        let who = switch item.direction {
+        case .received: "From \(names.first ?? "a device")"
+        case .sent: names.count == 1 ? "Sent to \(names[0])" : "Sent to \(names.count) devices"
+        }
+        return "\(who) · \(item.date.formatted(.relative(presentation: .named)))"
+    }
+}
+
+private struct SettingsSheet: View {
+    let model: SyncModel
     @Environment(\.dismiss) private var dismiss
-    @Environment(\.openURL) private var openURL
+    @State private var confirmingLeave = false
 
     var body: some View {
         NavigationStack {
             List {
                 Section {
-                    Text("CopyBlip needs two permissions so opening it is all it takes.")
-                }
-                Section {
-                    Step(number: 1, title: "Allow pasting without asking") {
-                        Text("Without this, iOS asks \"Allow Paste?\" every time CopyBlip sends what you copied.")
-                        Text("Open Settings below, tap **Paste from Other Apps** and choose **Allow**.")
-                        Text("If the option isn't there yet, copy some text, open CopyBlip and tap **Allow Paste** once. Then come back here.")
-                            .foregroundStyle(.secondary)
+                    NavigationLink {
+                        AwayFromHomeView(model: model)
+                    } label: {
+                        Label("Away From Home", systemImage: "globe")
                     }
-                    Button("Open CopyBlip Settings", systemImage: "gear") {
-                        openURL(URL(string: UIApplication.openSettingsURLString)!)
+                    NavigationLink {
+                        SetupSteps()
+                    } label: {
+                        Label("Setup Guide", systemImage: "questionmark.circle")
                     }
                 }
-                Section {
-                    Step(number: 2, title: "Allow Local Network") {
-                        Text("This lets CopyBlip find your computer on your Wi-Fi. Choose **Allow** if iOS asks.")
-                        Text("If you chose Don't Allow, turn on **Local Network** on the same Settings page.")
-                            .foregroundStyle(.secondary)
+                if !model.devices.isEmpty {
+                    Section {
+                        ForEach(model.devices) { device in
+                            Label(DeviceLook.name(device.name), systemImage: DeviceLook.symbol(device.name))
+                        }
+                        .onDelete { model.forgetDevices(at: $0) }
+                    } header: {
+                        Text("Devices")
+                    } footer: {
+                        Text("Swipe to remove a device you don't use anymore. It comes back if it syncs again.")
                     }
                 }
                 Section {
-                    Step(number: 3, title: "Use it") {
-                        Text("**From iPhone:** copy something, open CopyBlip, then paste on your computer.")
-                        Text("**To iPhone:** copy something on your computer, open CopyBlip, then paste on your iPhone.")
-                    }
+                    Button("Leave Group", role: .destructive) { confirmingLeave = true }
                 }
             }
-            .navigationTitle("Set Up CopyBlip")
+            .navigationTitle("Settings")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                Button("Done") { dismiss() }
+            }
+            .confirmationDialog("Leave this group?", isPresented: $confirmingLeave, titleVisibility: .visible) {
+                Button("Leave Group", role: .destructive) {
+                    dismiss()
+                    model.leave()
+                }
+            } message: {
+                Text("This iPhone stops syncing and forgets its devices and recent items until you join again.")
+            }
+        }
+    }
+}
+
+private struct AddDeviceSheet: View {
+    let model: SyncModel
+    @Environment(\.dismiss) private var dismiss
+    @State private var showingLink = false
+    @State private var copied = false
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(spacing: 20) {
+                    if let link = model.inviteLink {
+                        Text("On another iPhone, scan this with the Camera app and tap the CopyBlip link.")
+                            .multilineTextAlignment(.center)
+                        if let qr = QRCode.image(for: link) {
+                            Image(uiImage: qr)
+                                .interpolation(.none)
+                                .resizable()
+                                .scaledToFit()
+                                .frame(maxWidth: 240)
+                                .padding(16)
+                                .background(.white, in: RoundedRectangle(cornerRadius: 16))
+                        }
+                        Text("On a computer, install CopyBlip, run setup, choose Join and paste the invite link.")
+                            .multilineTextAlignment(.center)
+                        Button(showingLink ? "Hide Link" : "Show Link") { showingLink.toggle() }
+                            .buttonStyle(.bordered)
+                        if showingLink {
+                            Text(link)
+                                .font(.footnote.monospaced())
+                                .textSelection(.enabled)
+                                .padding(12)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 10))
+                            Button(copied ? "Copied" : "Copy Link", systemImage: copied ? "checkmark" : "doc.on.doc") {
+                                model.copyWithoutSending(link)
+                                copied = true
+                            }
+                        }
+                        Text("The invite holds your group's key. Anyone with it can read what you copy, so only use it with your own devices.")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                            .multilineTextAlignment(.center)
+                    }
+                }
+                .padding(20)
+            }
+            .navigationTitle("Add a Device")
+            .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 Button("Done") { dismiss() }
             }
         }
+    }
+}
+
+private enum QRCode {
+    static func image(for text: String) -> UIImage? {
+        let filter = CIFilter.qrCodeGenerator()
+        filter.message = Data(text.utf8)
+        filter.correctionLevel = "M"
+        guard let output = filter.outputImage?.transformed(by: CGAffineTransform(scaleX: 10, y: 10)),
+              let image = CIContext().createCGImage(output, from: output.extent) else { return nil }
+        return UIImage(cgImage: image)
+    }
+}
+
+private struct SetupGuide: View {
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            SetupSteps()
+                .toolbar {
+                    Button("Done") { dismiss() }
+                }
+        }
+    }
+}
+
+/// The setup steps, shown on first join and from Settings.
+private struct SetupSteps: View {
+    @Environment(\.openURL) private var openURL
+
+    var body: some View {
+        List {
+            Section {
+                Text("CopyBlip needs two permissions so opening it is all it takes.")
+            }
+            Section {
+                Step(number: 1, title: "Allow pasting without asking") {
+                    Text("Without this, iOS asks \"Allow Paste?\" every time CopyBlip sends what you copied.")
+                    Text("Open Settings below, tap **Paste from Other Apps** and choose **Allow**.")
+                    Text("If the option isn't there yet, copy some text, open CopyBlip and tap **Allow Paste** once. Then come back here.")
+                        .foregroundStyle(.secondary)
+                }
+                Button("Open CopyBlip Settings", systemImage: "gear") {
+                    openURL(URL(string: UIApplication.openSettingsURLString)!)
+                }
+            }
+            Section {
+                Step(number: 2, title: "Allow Local Network") {
+                    Text("This lets CopyBlip find your computer on your Wi-Fi. Choose **Allow** if iOS asks.")
+                    Text("If you chose Don't Allow, turn on **Local Network** on the same Settings page.")
+                        .foregroundStyle(.secondary)
+                }
+            }
+            Section {
+                Step(number: 3, title: "Use it") {
+                    Text("**From iPhone:** copy something, open CopyBlip, then paste on your computer.")
+                    Text("**To iPhone:** copy something on your computer, open CopyBlip, then paste on your iPhone.")
+                }
+            }
+        }
+        .navigationTitle("Set Up CopyBlip")
     }
 }
 
@@ -156,54 +560,39 @@ private struct Step<Content: View>: View {
     }
 }
 
-private struct StatusRow: View {
+private struct StatusCard: View {
     let status: SyncModel.Status
 
     var body: some View {
+        HStack(spacing: 10) {
+            content
+            Spacer(minLength: 0)
+        }
+        .font(.subheadline.weight(.medium))
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
+        .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 16))
+        .animation(.default, value: status)
+    }
+
+    @ViewBuilder private var content: some View {
         switch status {
         case .idle:
             Label("Ready", systemImage: "checkmark.circle")
         case let .working(message):
-            HStack {
-                ProgressView()
-                Text(message)
-            }
-        case let .sent(preview, names):
-            VStack(alignment: .leading, spacing: 6) {
-                Label("Sent to \(names.joined(separator: ", "))", systemImage: "arrow.up.circle.fill")
-                    .foregroundStyle(.green)
-                    .font(.headline)
-                PreviewView(preview: preview)
-            }
-        case let .received(preview, name):
-            VStack(alignment: .leading, spacing: 6) {
-                Label("Copied from \(name), ready to paste", systemImage: "arrow.down.circle.fill")
-                    .foregroundStyle(.blue)
-                    .font(.headline)
-                PreviewView(preview: preview)
-            }
+            ProgressView()
+            Text(message)
+        case let .sent(_, names):
+            Label("Sent to \(names.map(DeviceLook.name).joined(separator: ", "))", systemImage: "arrow.up.circle.fill")
+                .foregroundStyle(.green)
+        case let .received(_, name):
+            Label("Copied from \(DeviceLook.name(name)), ready to paste", systemImage: "arrow.down.circle.fill")
+                .foregroundStyle(.blue)
         case .upToDate:
             Label("Up to date", systemImage: "checkmark.circle.fill")
         case let .failed(message):
             Label(message, systemImage: "exclamationmark.triangle.fill")
                 .foregroundStyle(.orange)
-        }
-    }
-}
-
-private struct PreviewView: View {
-    let preview: SyncModel.Preview
-
-    var body: some View {
-        switch preview {
-        case let .text(text):
-            Text(text).font(.callout).foregroundStyle(.secondary).lineLimit(3)
-        case let .image(image):
-            Image(uiImage: image)
-                .resizable()
-                .scaledToFit()
-                .frame(maxHeight: 160)
-                .clipShape(RoundedRectangle(cornerRadius: 8))
         }
     }
 }

@@ -6,13 +6,9 @@ public enum ConnectionError: Error {
     case timedOut
 }
 
-/// One authenticated connection to a desktop agent. The phone always dials,
-/// either directly or through a relay pipe.
+/// One authenticated connection to a desktop agent. The phone always dials.
 public final class PeerConnection: @unchecked Sendable {
     private let connection: NWConnection
-    private let relayed: Bool
-    /// Relay messages can carry more or less than one read wants.
-    private var buffered = Data()
     private let queue = DispatchQueue(label: "copyblip.peer")
     private var sealer: Sealer?
     private var opener: Opener?
@@ -24,25 +20,12 @@ public final class PeerConnection: @unchecked Sendable {
 
     public init(endpoint: NWEndpoint) {
         connection = NWConnection(to: endpoint, using: .tcp)
-        relayed = false
-    }
-
-    /// `pipe` is a relay dial URL, as built by `Relay`.
-    public init(pipe: URL) {
-        let parameters: NWParameters = pipe.scheme == "wss" ? .tls : .tcp
-        parameters.defaultProtocolStack.applicationProtocols.insert(NWProtocolWebSocket.Options(), at: 0)
-        connection = NWConnection(to: .url(pipe), using: parameters)
-        relayed = true
     }
 
     /// Connects, handshakes and swaps hellos. Gives up after `timeout`.
     public func open(group: GroupKey, device: String, name: String, timeout: Duration = .seconds(4)) async throws {
         try await withTimeout(timeout) { [self] in
             try await waitUntilReady()
-            if relayed {
-                // The relay says "ready" once the computer has joined the pipe.
-                while try await receiveRelayMessage() != .ready {}
-            }
             let nonce = Handshake.newNonce()
             try await write(Handshake.hello(nonce: nonce))
             let peerHello = try await read(exactly: Handshake.helloLength)
@@ -54,8 +37,7 @@ public final class PeerConnection: @unchecked Sendable {
             }
             self.peerName = peerName
             reported = devices
-            // A relayed connection's remote end is the relay, not the computer.
-            if !relayed, case let .hostPort(host, port)? = connection.currentPath?.remoteEndpoint {
+            if case let .hostPort(host, port)? = connection.currentPath?.remoteEndpoint {
                 // Drops the interface suffix, e.g. "%en0", which is only valid on this connection.
                 let name = "\(host)".split(separator: "%").first.map(String.init) ?? "\(host)"
                 address = Address(host: name, port: port.rawValue)
@@ -88,47 +70,12 @@ public final class PeerConnection: @unchecked Sendable {
 
     /// Sends anything queued, then closes.
     public func finish() async {
-        let context = relayed ? Self.context(.close) : .finalMessage
         try? await withCheckedThrowingContinuation { (done: CheckedContinuation<Void, Error>) in
-            connection.send(content: nil, contentContext: context, isComplete: true, completion: .contentProcessed { error in
+            connection.send(content: nil, contentContext: .finalMessage, isComplete: true, completion: .contentProcessed { error in
                 if let error { done.resume(throwing: error) } else { done.resume() }
             })
         }
         close()
-    }
-
-    private static func context(_ opcode: NWProtocolWebSocket.Opcode) -> NWConnection.ContentContext {
-        NWConnection.ContentContext(identifier: "relay", metadata: [NWProtocolWebSocket.Metadata(opcode: opcode)])
-    }
-
-    private enum RelayMessage: Equatable {
-        case ready
-        case other
-        case bytes(Data)
-    }
-
-    private func receiveRelayMessage() async throws -> RelayMessage {
-        try await withTaskCancellationHandler {
-            try await withCheckedThrowingContinuation { (done: CheckedContinuation<RelayMessage, Error>) in
-                connection.receiveMessage { data, context, _, error in
-                    let metadata = context?.protocolMetadata(definition: NWProtocolWebSocket.definition)
-                    let opcode = (metadata as? NWProtocolWebSocket.Metadata)?.opcode
-                    if let error {
-                        done.resume(throwing: error)
-                    } else if opcode == .close || (data == nil && context?.isFinal == true) {
-                        done.resume(throwing: ConnectionError.closed)
-                    } else if opcode == .text {
-                        done.resume(returning: data == Data("ready".utf8) ? .ready : .other)
-                    } else if opcode == .binary, let data {
-                        done.resume(returning: .bytes(data))
-                    } else {
-                        done.resume(returning: .other)
-                    }
-                }
-            }
-        } onCancel: { [connection] in
-            connection.cancel()
-        }
     }
 
     public func close() {
@@ -155,36 +102,14 @@ public final class PeerConnection: @unchecked Sendable {
     }
 
     private func write(_ data: Data) async throws {
-        // Relay messages are kept well under the relay's size limit.
-        let chunks = relayed ? stride(from: 0, to: data.count, by: 256 * 1024).map {
-            data.subdata(in: $0..<min($0 + 256 * 1024, data.count))
-        } : [data]
-        for chunk in chunks {
-            try await withCheckedThrowingContinuation { (done: CheckedContinuation<Void, Error>) in
-                connection.send(
-                    content: chunk,
-                    contentContext: relayed ? Self.context(.binary) : .defaultMessage,
-                    isComplete: true,
-                    completion: .contentProcessed { error in
-                        if let error { done.resume(throwing: error) } else { done.resume() }
-                    }
-                )
-            }
+        try await withCheckedThrowingContinuation { (done: CheckedContinuation<Void, Error>) in
+            connection.send(content: data, completion: .contentProcessed { error in
+                if let error { done.resume(throwing: error) } else { done.resume() }
+            })
         }
     }
 
     private func read(exactly count: Int) async throws -> Data {
-        if relayed {
-            while buffered.count < count {
-                if case let .bytes(data) = try await receiveRelayMessage() {
-                    buffered.append(data)
-                }
-            }
-            // Copied, because a slice of Data keeps the original's indices.
-            let bytes = Data(buffered.prefix(count))
-            buffered = Data(buffered.dropFirst(count))
-            return bytes
-        }
         return try await withTaskCancellationHandler {
             try await withCheckedThrowingContinuation { (done: CheckedContinuation<Data, Error>) in
                 connection.receive(minimumIncompleteLength: count, maximumLength: count) { data, _, isComplete, error in

@@ -2,13 +2,13 @@
 
 ## On computers
 
-CopyBlip on Mac and Windows checks for a new version 15 seconds after it starts, then every 6 hours. With **Install updates automatically** on (the default), it downloads the update, swaps it in, and restarts itself, which takes about a second. With it off, the window shows an **Install** button and the tray menu shows **Install Update**.
+Carryover on Mac and Windows checks for a new version 15 seconds after it starts, then every 6 hours. With **Install updates automatically** on (the default), it downloads the update, swaps it in, and restarts itself, which takes about a second. With it off, the window shows an **Install** button and the tray menu shows **Install Update**.
 
 **Settings › Updates › Check for Updates** checks right away.
 
 Each update is checked before it's used:
 
-- **Signed.** The release's `manifest.json` must carry a valid Ed25519 signature from the CopyBlip release key, whose public half is built into the app. Someone who controls the download site, or the network, still can't ship an update.
+- **Signed.** The release's `manifest.json` must carry a valid Ed25519 signature from the Carryover release key, whose public half is built into the app. Someone who controls the download site, or the network, still can't ship an update.
 - **Matching.** The downloaded program must match the size and SHA-256 listed in the signed manifest.
 - **Newer.** Only versions newer than the running one are installed, so an old release can't be replayed to downgrade.
 

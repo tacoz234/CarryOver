@@ -60,15 +60,9 @@ Each side's first frame is `hello`. Nothing else is sent until the peer's `hello
 - Computers send their known devices in `hello`, and send `devices` to every connection whenever one of their own connections starts or ends. A device counts as online if it's connected directly, or if a directly connected computer reports it as connected. Only direct reports count, so peers can't keep a departed device online by repeating each other. The iPhone sends no list.
 - Pings go out after 15 seconds of silence, and a connection is dropped after 45 seconds without a frame.
 
-## Relay
-
-Devices on different networks can connect through a relay; see [relay/README.md](../relay/README.md). A relayed pipe carries exactly the same bytes as a TCP connection, split into WebSocket binary messages of at most 256 KiB.
-
-The relay room is the first 16 bytes of `HKDF-SHA256(ikm = key, no salt, info = "copyblip v1 relay room")`, in hex.
-
 ## Invite links
 
-`copyblip://join?code=<pairing code>&relay=<https URL>`. The relay is optional. `copyblip invite` shows this as a QR code, and the iPhone app opens it after asking.
+`carryover://join?code=<pairing code>`. Devices also accept `copyblip://`, from before the app was renamed, and ignore other parameters, such as the `relay` that older versions added. `copyblip invite` shows this as a QR code, and the iPhone app opens it after asking.
 
 ## Known limits
 

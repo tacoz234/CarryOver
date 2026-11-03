@@ -16,7 +16,7 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.coledeterman.CopyBlip
-        MARKETING_VERSION: "0.1.0"
+        MARKETING_VERSION: "0.3.1"
         CURRENT_PROJECT_VERSION: "1"
         TARGETED_DEVICE_FAMILY: "1,2"
         SWIFT_VERSION: "6.0"
@@ -25,13 +25,19 @@ targets:
         CODE_SIGN_STYLE: Automatic
         DEVELOPMENT_TEAM: A6GZ8F6PF5
         INFOPLIST_KEY_UILaunchScreen_Generation: YES
-        INFOPLIST_KEY_CFBundleDisplayName: CopyBlip
-        INFOPLIST_KEY_NSLocalNetworkUsageDescription: CopyBlip finds your Mac and Windows devices on this network to share the clipboard with them.
+        INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone: UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight
+        # iPad multitasking needs every orientation.
+        INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad: UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight
+        INFOPLIST_KEY_CFBundleDisplayName: Carryover
+        INFOPLIST_KEY_NSLocalNetworkUsageDescription: Carryover finds your Mac and Windows devices on this network to share the clipboard with them.
     info:
       path: CopyBlip/Info.plist
       properties:
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         NSBonjourServices: [_copyblip._tcp]
         # Lets the Camera app open invite QR codes from `copyblip invite`.
         CFBundleURLTypes:
           - CFBundleURLName: com.coledeterman.CopyBlip
-            CFBundleURLSchemes: [copyblip]
+            # copyblip opens invites made before the rename.
+            CFBundleURLSchemes: [carryover, copyblip]

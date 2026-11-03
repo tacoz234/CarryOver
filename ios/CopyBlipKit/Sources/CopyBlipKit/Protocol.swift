@@ -159,15 +159,6 @@ public struct GroupKey: Sendable, Equatable {
 
     public var pairingCode: String { bytes.hex }
 
-    /// The relay room for this group. Derived from the key, so only members can find it.
-    public var relayRoom: String {
-        HKDF<SHA256>.deriveKey(
-            inputKeyMaterial: SymmetricKey(data: bytes),
-            info: Data("copyblip v1 relay room".utf8),
-            outputByteCount: 16
-        ).withUnsafeBytes { Data($0) }.hex
-    }
-
     /// Non-secret tag advertised over mDNS so devices can skip other groups.
     public var tag: String {
         let tag = HKDF<SHA256>.deriveKey(

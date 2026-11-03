@@ -31,7 +31,7 @@ impl Window {
         tab: Option<&'static str>,
     ) -> Result<Self> {
         let window = WindowBuilder::new()
-            .with_title("CopyBlip")
+            .with_title("Carryover")
             .with_inner_size(LogicalSize::new(760.0, 540.0))
             .with_min_inner_size(LogicalSize::new(600.0, 420.0))
             .build(target)?;
@@ -148,7 +148,7 @@ mod tests {
 
     #[test]
     fn invite_qr_has_a_quiet_zone() {
-        let svg = qr_svg("copyblip://join?code=00").unwrap();
+        let svg = qr_svg("carryover://join?code=00").unwrap();
         // Version 2 codes are 25 modules wide, plus 4 on each side.
         assert!(svg.contains(r#"viewBox="0 0 33 33""#), "{svg}");
         // The top-left finder pattern starts right after the quiet zone.

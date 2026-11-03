@@ -13,7 +13,7 @@ struct ContentView: View {
                     SyncView(model: model)
                 }
             }
-            .navigationTitle("CopyBlip")
+            .navigationTitle("Carryover")
         }
         .tint(Brand.accent)
         .sheet(isPresented: $model.showingSetup, onDismiss: model.setupClosed) {
@@ -21,16 +21,15 @@ struct ContentView: View {
         }
         .onOpenURL { model.open($0) }
         .alert(
-            model.group == nil ? "Join this CopyBlip group?" : "Switch to this CopyBlip group?",
+            model.group == nil ? "Join this Carryover group?" : "Switch to this Carryover group?",
             isPresented: Binding(get: { model.pendingInvite != nil }, set: { if !$0 { model.pendingInvite = nil } }),
             presenting: model.pendingInvite
         ) { _ in
             Button(model.group == nil ? "Join" : "Switch") { model.acceptInvite() }
             Button("Cancel", role: .cancel) {}
-        } message: { invite in
+        } message: { _ in
             let replaces = model.group == nil ? "" : " This replaces the group you're in now."
-            let relay = invite.relay.map { " It also uses the relay at \($0.base.host() ?? "")." } ?? ""
-            Text("Only join groups made on your own computers.\(replaces)\(relay)")
+            Text("Only join groups made on your own computers.\(replaces)")
         }
     }
 }
@@ -50,7 +49,7 @@ private struct JoinView: View {
                 Button("Join") { invalid = !model.join(code: code) }
                     .disabled(code.isEmpty)
             } footer: {
-                Text("On a computer in your group, open CopyBlip and choose **Add a Device**, then scan the QR code with the Camera app. Or paste its invite link here.")
+                Text("On a computer in your group, open Carryover and choose **Add a Device**, then scan the QR code with the Camera app. Or paste its invite link here.")
             }
             if invalid {
                 Text("That isn't a valid invite link or pairing code.")
@@ -60,12 +59,14 @@ private struct JoinView: View {
     }
 }
 
-/// CopyBlip's purple, matching the computers' window.
+/// Carryover's coral, matching the computers' window.
 private enum Brand {
-    static let accent = Color(red: 0.42, green: 0.11, blue: 0.98)
+    /// #E0482D, readable both on white and in dark mode.
+    static let accent = Color(red: 0.878, green: 0.282, blue: 0.176)
+    /// #FF9158 to #F0533C.
     static var gradient: LinearGradient {
         LinearGradient(
-            colors: [Color(red: 0.56, green: 0.32, blue: 1.0), Color(red: 0.39, green: 0.01, blue: 0.98)],
+            colors: [Color(red: 1.0, green: 0.569, blue: 0.345), Color(red: 0.941, green: 0.325, blue: 0.235)],
             startPoint: .top,
             endPoint: .bottom
         )
@@ -105,8 +106,21 @@ private struct SyncView: View {
     @State private var showingAddDevice = false
     @State private var copiedID: String?
 
-    private let deviceColumns = Array(repeating: GridItem(.flexible(), spacing: 12, alignment: .top), count: 4)
-    private let recentColumns = Array(repeating: GridItem(.flexible(), spacing: 16, alignment: .top), count: 2)
+    @Environment(\.horizontalSizeClass) private var sizeClass
+
+    /// iPhones fit four tiles across. Wider screens, like iPads, keep tiles
+    /// at a fixed size and fit more across instead of stretching them.
+    private var deviceColumns: [GridItem] {
+        sizeClass == .regular
+            ? [GridItem(.adaptive(minimum: 112, maximum: 128), spacing: 24, alignment: .top)]
+            : Array(repeating: GridItem(.flexible(), spacing: 12, alignment: .top), count: 4)
+    }
+
+    private var recentColumns: [GridItem] {
+        sizeClass == .regular
+            ? [GridItem(.adaptive(minimum: 200, maximum: 240), spacing: 24, alignment: .top)]
+            : Array(repeating: GridItem(.flexible(), spacing: 16, alignment: .top), count: 2)
+    }
 
     var body: some View {
         ScrollView {
@@ -294,7 +308,7 @@ private struct SendCard: View {
         HStack(spacing: 12) {
             VStack(alignment: .leading, spacing: 2) {
                 Text("Send Clipboard").font(.headline)
-                Text("If what you copied didn't send when you opened CopyBlip.")
+                Text("If what you copied didn't send when you opened Carryover.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -408,11 +422,6 @@ private struct SettingsSheet: View {
             List {
                 Section {
                     NavigationLink {
-                        AwayFromHomeView(model: model)
-                    } label: {
-                        Label("Away From Home", systemImage: "globe")
-                    }
-                    NavigationLink {
                         SetupSteps()
                     } label: {
                         Label("Setup Guide", systemImage: "questionmark.circle")
@@ -462,7 +471,7 @@ private struct AddDeviceSheet: View {
             ScrollView {
                 VStack(spacing: 20) {
                     if let link = model.inviteLink {
-                        Text("On another iPhone, scan this with the Camera app and tap the CopyBlip link.")
+                        Text("On another iPhone, scan this with the Camera app and tap the Carryover link.")
                             .multilineTextAlignment(.center)
                         if let qr = QRCode.image(for: link) {
                             Image(uiImage: qr)
@@ -473,7 +482,7 @@ private struct AddDeviceSheet: View {
                                 .padding(16)
                                 .background(.white, in: RoundedRectangle(cornerRadius: 16))
                         }
-                        Text("On a computer, install CopyBlip, run setup, choose Join and paste the invite link.")
+                        Text("On a computer, install Carryover, run setup, choose Join and paste the invite link.")
                             .multilineTextAlignment(.center)
                         Button(showingLink ? "Hide Link" : "Show Link") { showingLink.toggle() }
                             .buttonStyle(.bordered)
@@ -537,34 +546,34 @@ private struct SetupSteps: View {
     var body: some View {
         List {
             Section {
-                Text("CopyBlip needs two permissions so opening it is all it takes.")
+                Text("Carryover needs two permissions so opening it is all it takes.")
             }
             Section {
                 Step(number: 1, title: "Allow pasting without asking") {
-                    Text("Without this, iOS asks \"Allow Paste?\" every time CopyBlip sends what you copied.")
+                    Text("Without this, iOS asks \"Allow Paste?\" every time Carryover sends what you copied.")
                     Text("Open Settings below, tap **Paste from Other Apps** and choose **Allow**.")
-                    Text("If the option isn't there yet, copy some text, open CopyBlip and tap **Allow Paste** once. Then come back here.")
+                    Text("If the option isn't there yet, copy some text, open Carryover and tap **Allow Paste** once. Then come back here.")
                         .foregroundStyle(.secondary)
                 }
-                Button("Open CopyBlip Settings", systemImage: "gear") {
+                Button("Open Carryover Settings", systemImage: "gear") {
                     openURL(URL(string: UIApplication.openSettingsURLString)!)
                 }
             }
             Section {
                 Step(number: 2, title: "Allow Local Network") {
-                    Text("This lets CopyBlip find your computer on your Wi-Fi. Choose **Allow** if iOS asks.")
+                    Text("This lets Carryover find your computer on your Wi-Fi. Choose **Allow** if iOS asks.")
                     Text("If you chose Don't Allow, turn on **Local Network** on the same Settings page.")
                         .foregroundStyle(.secondary)
                 }
             }
             Section {
                 Step(number: 3, title: "Use it") {
-                    Text("**From iPhone:** copy something, open CopyBlip, then paste on your computer.")
-                    Text("**To iPhone:** copy something on your computer, open CopyBlip, then paste on your iPhone.")
+                    Text("**From iPhone:** copy something, open Carryover, then paste on your computer.")
+                    Text("**To iPhone:** copy something on your computer, open Carryover, then paste on your iPhone.")
                 }
             }
         }
-        .navigationTitle("Set Up CopyBlip")
+        .navigationTitle("Set Up Carryover")
     }
 }
 
@@ -620,62 +629,5 @@ private struct StatusCard: View {
             Label(message, systemImage: "exclamationmark.triangle.fill")
                 .foregroundStyle(.orange)
         }
-    }
-}
-
-private struct AwayFromHomeView: View {
-    let model: SyncModel
-    @State private var relayText = ""
-    @State private var relayInvalid = false
-    @State private var newAddress = ""
-    @State private var addressInvalid = false
-
-    var body: some View {
-        Form {
-            Section {
-                TextField("https://copyblip-relay.example.workers.dev", text: $relayText)
-                    .keyboardType(.URL)
-                    .textInputAutocapitalization(.never)
-                    .autocorrectionDisabled()
-                    .onSubmit { relayInvalid = !model.setRelay(relayText) }
-                if relayInvalid {
-                    Text("That isn't a relay address. It should start with https://.")
-                        .foregroundStyle(.red)
-                }
-            } header: {
-                Text("Relay")
-            } footer: {
-                Text("Works on any network. Use the same relay address as your computers. Leave empty to turn it off.")
-            }
-
-            Section {
-                ForEach(model.manualAddresses, id: \.self) { address in
-                    Text(address.description).font(.body.monospaced())
-                }
-                .onDelete { model.removeAddresses(at: $0) }
-                HStack {
-                    TextField("macmini or 100.64.0.1", text: $newAddress)
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled()
-                        .onSubmit(add)
-                    Button("Add", action: add).disabled(newAddress.isEmpty)
-                }
-                if addressInvalid {
-                    Text("That isn't a computer name or address.").foregroundStyle(.red)
-                }
-            } header: {
-                Text("Computer Addresses")
-            } footer: {
-                Text("For Tailscale: with Tailscale on, add each computer's Tailscale name or 100.x address.")
-            }
-        }
-        .navigationTitle("Away From Home")
-        .onAppear { relayText = model.relay?.base.absoluteString ?? "" }
-        .onDisappear { _ = model.setRelay(relayText) }
-    }
-
-    private func add() {
-        addressInvalid = !model.addAddress(newAddress)
-        if !addressInvalid { newAddress = "" }
     }
 }

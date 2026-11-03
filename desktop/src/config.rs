@@ -10,13 +10,6 @@ pub const DEFAULT_PORT: u16 = 47820;
 pub struct Config {
     pub device: String,
     group_key: String,
-    /// Addresses to connect to besides those found on the local network,
-    /// such as Tailscale names, as `host:port`.
-    #[serde(default)]
-    pub peers: Vec<String>,
-    /// Relay base URL, for devices on different networks.
-    #[serde(default)]
-    pub relay: Option<String>,
     /// Install updates as soon as they're found.
     #[serde(default = "yes")]
     pub auto_update: bool,
@@ -31,23 +24,14 @@ impl Config {
         Self {
             device: hex::encode(rand::random::<[u8; 8]>()),
             group_key: hex::encode(key),
-            peers: Vec::new(),
-            relay: None,
             auto_update: true,
         }
     }
 
-    /// A link that joins a device to this group and relay. Scanned as a QR code
-    /// by the iPhone's camera, or pasted into `copyblip join`.
+    /// A link that joins a device to this group. Scanned as a QR code by the
+    /// iPhone's camera, or pasted into `copyblip join`.
     pub fn invite_link(&self) -> String {
-        let mut link = format!("copyblip://join?code={}", self.group_key);
-        if let Some(relay) = &self.relay {
-            let https = relay
-                .replacen("wss://", "https://", 1)
-                .replacen("ws://", "http://", 1);
-            link.push_str(&format!("&relay={https}"));
-        }
-        link
+        format!("carryover://join?code={}", self.group_key)
     }
 
     /// Saves changes to an existing config.
@@ -83,63 +67,23 @@ impl Config {
     }
 }
 
-/// Accepts `host`, `host:port`, an IPv4 or IPv6 address, or `[ipv6]:port`,
-/// and returns `host:port`, using the default port if none was given.
-pub fn normalize_peer(address: &str) -> Result<String> {
-    let address = address.trim();
-    ensure!(
-        !address.is_empty() && !address.contains('/'),
-        "{address:?} isn't a host or address"
-    );
-    if address.parse::<std::net::SocketAddr>().is_ok() {
-        return Ok(address.to_owned());
-    }
-    if let Ok(ip) = address.parse::<std::net::IpAddr>() {
-        return Ok(std::net::SocketAddr::new(ip, DEFAULT_PORT).to_string());
-    }
-    match address.rsplit_once(':') {
-        Some((host, port)) if !host.contains(':') => {
-            let port: u16 = port
-                .parse()
-                .with_context(|| format!("{port:?} isn't a port number"))?;
-            Ok(format!("{host}:{port}"))
-        }
-        _ => Ok(format!("{address}:{DEFAULT_PORT}")),
-    }
-}
-
-/// Accepts `https://` or `wss://` relay URLs, and `http://` or `ws://` for
-/// local testing. Returns the WebSocket form without a trailing slash.
-pub fn normalize_relay(url: &str) -> Result<String> {
-    let url = url.trim().trim_end_matches('/');
-    let rest = |scheme: &str| url.strip_prefix(scheme).filter(|rest| !rest.is_empty());
-    if let Some(rest) = rest("https://").or_else(|| rest("wss://")) {
-        Ok(format!("wss://{rest}"))
-    } else if let Some(rest) = rest("http://").or_else(|| rest("ws://")) {
-        Ok(format!("ws://{rest}"))
-    } else {
-        bail!("relay address should start with https://")
-    }
-}
-
-/// Accepts an invite link or a bare pairing code. Returns the key and the
-/// relay, if the link named one.
-pub fn parse_invite(text: &str) -> Result<(GroupKey, Option<String>)> {
+/// Accepts an invite link or a bare pairing code, and returns the key.
+/// Other parts of a link, like the relay older versions added, are ignored.
+pub fn parse_invite(text: &str) -> Result<GroupKey> {
     // PowerShell starts text piped to a program with a byte order mark.
     let text = text.trim().trim_start_matches('\u{feff}');
-    let Some(query) = text.strip_prefix("copyblip://join?") else {
-        return Ok((parse_code(text)?, None));
+    // copyblip:// is from before the app was renamed.
+    let Some(query) = ["carryover://join?", "copyblip://join?"]
+        .iter()
+        .find_map(|prefix| text.strip_prefix(prefix))
+    else {
+        return parse_code(text);
     };
-    let mut code = None;
-    let mut relay = None;
-    for pair in query.split('&') {
-        match pair.split_once('=') {
-            Some(("code", value)) => code = Some(parse_code(value)?),
-            Some(("relay", value)) => relay = Some(normalize_relay(value)?),
-            _ => {}
-        }
-    }
-    Ok((code.context("invite link has no code")?, relay))
+    let code = query
+        .split('&')
+        .find_map(|pair| pair.strip_prefix("code="))
+        .context("invite link has no code")?;
+    parse_code(code)
 }
 
 pub fn parse_code(code: &str) -> Result<GroupKey> {
@@ -193,55 +137,22 @@ mod tests {
     use super::*;
 
     #[test]
-    fn peers_get_a_port_when_missing() {
-        assert_eq!(normalize_peer("macmini").unwrap(), "macmini:47820");
-        assert_eq!(normalize_peer(" macmini:5000 ").unwrap(), "macmini:5000");
-        assert_eq!(normalize_peer("100.64.0.1").unwrap(), "100.64.0.1:47820");
-        assert_eq!(
-            normalize_peer("fd7a:115c::1").unwrap(),
-            "[fd7a:115c::1]:47820"
-        );
-        assert_eq!(
-            normalize_peer("[fd7a:115c::1]:9").unwrap(),
-            "[fd7a:115c::1]:9"
-        );
-        assert!(normalize_peer("host:notaport").is_err());
-        assert!(normalize_peer("").is_err());
-        assert!(normalize_peer("https://example.com").is_err());
-    }
-
-    #[test]
-    fn relay_urls_become_websocket_urls() {
-        assert_eq!(
-            normalize_relay("https://relay.example.dev/").unwrap(),
-            "wss://relay.example.dev"
-        );
-        assert_eq!(
-            normalize_relay("http://127.0.0.1:8787").unwrap(),
-            "ws://127.0.0.1:8787"
-        );
-        assert!(normalize_relay("relay.example.dev").is_err());
-        assert!(normalize_relay("https://").is_err());
-    }
-
-    #[test]
     fn invite_links_round_trip() {
-        let mut config = Config::new(&[7; 32]);
+        let link = Config::new(&[7; 32]).invite_link();
+        assert_eq!(parse_invite(&format!(" {link}\n")).unwrap(), [7; 32]);
+        assert_eq!(parse_invite(&hex::encode([7u8; 32])).unwrap(), [7; 32]);
         assert_eq!(
-            parse_invite(&config.invite_link()).unwrap(),
-            ([7; 32], None)
+            parse_invite(&format!("\u{feff}{link}\r\n")).unwrap(),
+            [7; 32]
         );
-        config.relay = Some("wss://relay.example.dev".into());
-        let link = config.invite_link();
-        assert!(link.ends_with("&relay=https://relay.example.dev"));
-        let (key, relay) = parse_invite(&format!(" {link}\n")).unwrap();
+        // Links from versions that had a relay still work.
         assert_eq!(
-            (key, relay.as_deref()),
-            ([7; 32], Some("wss://relay.example.dev"))
+            parse_invite(&format!("{link}&relay=https://relay.example.dev")).unwrap(),
+            [7; 32]
         );
-        assert_eq!(parse_invite(&hex::encode([7u8; 32])).unwrap().0, [7; 32]);
+        // Links from before the rename still work.
         assert_eq!(
-            parse_invite(&format!("\u{feff}{link}\r\n")).unwrap().0,
+            parse_invite(&format!("copyblip://join?code={}", hex::encode([7u8; 32]))).unwrap(),
             [7; 32]
         );
         assert!(parse_invite("copyblip://join?relay=https://x.dev").is_err());
@@ -249,10 +160,12 @@ mod tests {
     }
 
     #[test]
-    fn older_configs_without_new_fields_still_load() {
+    fn older_configs_still_load() {
         let old = r#"{"device":"ab","group_key":"00"}"#;
         let config: Config = serde_json::from_str(old).unwrap();
-        assert!(config.peers.is_empty() && config.relay.is_none());
         assert!(config.auto_update);
+        // Ones that saved addresses or a relay load too. They're dropped.
+        let old = r#"{"device":"ab","group_key":"00","peers":["mac:1"],"relay":"wss://x.dev"}"#;
+        assert!(serde_json::from_str::<Config>(old).is_ok());
     }
 }

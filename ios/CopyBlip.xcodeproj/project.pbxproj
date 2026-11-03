@@ -12,6 +12,7 @@
 		0DA1A777ED4CD8DBA0978CC6 /* SyncModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6679B052FBAE3AD9EFCAC942 /* SyncModel.swift */; };
 		4FBC4F12CAF355A65DDDC119 /* CopyBlipApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2E110FC41425C09F8159F15B /* CopyBlipApp.swift */; };
 		70BDD1CE370D70ED85BD9EEE /* Keychain.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE22F4CEC553AB3EB4D3DBB4 /* Keychain.swift */; };
+		D60D3C1667CDFC60EBD687D1 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = D0590FF036F7C53CFD1B348D /* PrivacyInfo.xcprivacy */; };
 		E7878A2D002896BEBDB4DC52 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 7D9966508A8929BCB153C38A /* Assets.xcassets */; };
 /* End PBXBuildFile section */
 
@@ -23,6 +24,7 @@
 		72A628766F79826AE6542DEB /* CopyBlip.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = CopyBlip.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		7D9966508A8929BCB153C38A /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		BB8DF4387E601CFC3F39A928 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
+		D0590FF036F7C53CFD1B348D /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		FE22F4CEC553AB3EB4D3DBB4 /* Keychain.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Keychain.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -54,6 +56,7 @@
 				2E110FC41425C09F8159F15B /* CopyBlipApp.swift */,
 				BB8DF4387E601CFC3F39A928 /* Info.plist */,
 				FE22F4CEC553AB3EB4D3DBB4 /* Keychain.swift */,
+				D0590FF036F7C53CFD1B348D /* PrivacyInfo.xcprivacy */,
 				6679B052FBAE3AD9EFCAC942 /* SyncModel.swift */,
 			);
 			path = CopyBlip;
@@ -142,6 +145,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				E7878A2D002896BEBDB4DC52 /* Assets.xcassets in Resources */,
+				D60D3C1667CDFC60EBD687D1 /* PrivacyInfo.xcprivacy in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -291,14 +295,16 @@
 				DEVELOPMENT_TEAM = A6GZ8F6PF5;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = CopyBlip/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = CopyBlip;
-				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "CopyBlip finds your Mac and Windows devices on this network to share the clipboard with them.";
+				INFOPLIST_KEY_CFBundleDisplayName = Carryover;
+				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "Carryover finds your Mac and Windows devices on this network to share the clipboard with them.";
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 0.1.0;
+				MARKETING_VERSION = 0.3.1;
 				PRODUCT_BUNDLE_IDENTIFIER = com.coledeterman.CopyBlip;
 				SDKROOT = iphoneos;
 				SWIFT_VERSION = 6.0;
@@ -316,14 +322,16 @@
 				DEVELOPMENT_TEAM = A6GZ8F6PF5;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = CopyBlip/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = CopyBlip;
-				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "CopyBlip finds your Mac and Windows devices on this network to share the clipboard with them.";
+				INFOPLIST_KEY_CFBundleDisplayName = Carryover;
+				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "Carryover finds your Mac and Windows devices on this network to share the clipboard with them.";
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 0.1.0;
+				MARKETING_VERSION = 0.3.1;
 				PRODUCT_BUNDLE_IDENTIFIER = com.coledeterman.CopyBlip;
 				SDKROOT = iphoneos;
 				SWIFT_VERSION = 6.0;

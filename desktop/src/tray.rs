@@ -1,7 +1,8 @@
 //! The menu bar icon on macOS and the notification area icon on Windows, and
 //! the event loop that also runs the main window.
 use crate::app::{App, Request, ago};
-use crate::hub::Status;
+use crate::avatar::{self, Kind};
+use crate::hub::{DeviceStatus, Status};
 use crate::update::{self, State};
 use crate::window::{UserEvent, Window};
 use anyhow::Result;
@@ -10,7 +11,9 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tao::event::{Event, StartCause, WindowEvent};
 use tao::event_loop::{ControlFlow, EventLoopBuilder};
-use tray_icon::menu::{CheckMenuItem, Menu, MenuEvent, MenuItem, PredefinedMenuItem};
+use tray_icon::menu::{
+    CheckMenuItem, Icon as MenuIcon, IconMenuItem, Menu, MenuEvent, MenuItem, PredefinedMenuItem,
+};
 use tray_icon::{Icon, TrayIcon, TrayIconBuilder};
 
 #[cfg(target_os = "macos")]
@@ -18,11 +21,20 @@ const ICON: &[u8] = include_bytes!("../../assets/tray-mac.png");
 #[cfg(windows)]
 const ICON: &[u8] = include_bytes!("../../assets/tray-windows.png");
 
+/// The most devices listed in the menu. The window lists them all.
+const MAX_DEVICES: usize = 8;
+
 struct Items {
-    connected: MenuItem,
+    menu: Menu,
+    /// The title, which also says when syncing is paused.
+    header: MenuItem,
+    /// One row per device, between the header and Add a Device.
+    devices: Vec<IconMenuItem>,
+    /// Stands in for the device rows before any device has connected.
+    no_devices: MenuItem,
     activity: MenuItem,
     open: MenuItem,
-    add_device: MenuItem,
+    add_device: IconMenuItem,
     pause: CheckMenuItem,
     update: MenuItem,
     quit: MenuItem,
@@ -44,14 +56,17 @@ pub fn run(app: Arc<App>, open_window: bool) -> ! {
     event_loop.set_device_event_filter(tao::event_loop::DeviceEventFilter::Always);
     let proxy = event_loop.create_proxy();
 
-    let items = Items {
-        connected: MenuItem::new("Starting…", false, None),
+    let mut items = Items {
+        menu: Menu::new(),
+        header: MenuItem::new("Carryover", false, None),
+        devices: Vec::new(),
+        no_devices: MenuItem::new("No devices yet", false, None),
         activity: MenuItem::new("Nothing synced yet", false, None),
-        open: MenuItem::new("Open CopyBlip…", true, None),
-        add_device: MenuItem::new("Add a Device…", true, None),
+        open: MenuItem::new("Open Carryover…", true, None),
+        add_device: IconMenuItem::new("Add a Device…", true, Some(picture(Kind::Add, false)), None),
         pause: CheckMenuItem::new("Pause Syncing", true, false, None),
         update: MenuItem::new("Check for Updates", true, None),
-        quit: MenuItem::new("Quit CopyBlip", true, None),
+        quit: MenuItem::new("Quit Carryover", true, None),
     };
     let mut tray: Option<TrayIcon> = None;
     let mut window: Option<Window> = None;
@@ -91,10 +106,6 @@ pub fn run(app: Arc<App>, open_window: bool) -> ! {
                     }
                     Ok(request) => {
                         let saved = match &request {
-                            Request::Relay { url } if url.trim().is_empty() => {
-                                Some("Relay turned off.")
-                            }
-                            Request::Relay { .. } => Some("Relay saved."),
                             Request::CopyClip { .. } => {
                                 Some("Copied to this computer's clipboard.")
                             }
@@ -126,7 +137,9 @@ pub fn run(app: Arc<App>, open_window: bool) -> ! {
         }
 
         while let Ok(event) = MenuEvent::receiver().try_recv() {
-            if event.id == items.open.id() {
+            if event.id == items.open.id()
+                || items.devices.iter().any(|device| device.id() == &event.id)
+            {
                 open_tab = Some("devices");
             } else if event.id == items.add_device.id() {
                 open_tab = Some("add");
@@ -176,7 +189,7 @@ pub fn run(app: Arc<App>, open_window: bool) -> ! {
         if let State::Ready(version) = app.updater.state() {
             match update::relaunch() {
                 Ok(code) => {
-                    eprintln!("restarting into CopyBlip {version}");
+                    eprintln!("restarting into Carryover {version}");
                     exit = Some(code);
                 }
                 Err(error) => eprintln!("couldn't restart after updating: {error:#}"),
@@ -195,15 +208,20 @@ pub fn run(app: Arc<App>, open_window: bool) -> ! {
 
         if let Some(tray) = &tray {
             let status = app.hub.status();
-            let lines = vec![
-                connected_line(&status),
+            let mut lines = vec![
+                header_line(&status),
                 activity_line(&status),
                 update_line(&app.updater.state()),
                 status.paused.to_string(),
             ];
+            let listed = &status.devices[..status.devices.len().min(MAX_DEVICES)];
+            lines.extend(listed.iter().map(device_key));
             // Only touches the menu when something changed, to avoid flicker.
             if lines != shown {
-                items.connected.set_text(&lines[0]);
+                if lines[4..] != *shown.get(4..).unwrap_or_default() {
+                    set_devices(&mut items, listed);
+                }
+                items.header.set_text(&lines[0]);
                 items.activity.set_text(&lines[1]);
                 items.update.set_text(&lines[2]);
                 items.pause.set_checked(status.paused);
@@ -218,13 +236,15 @@ pub fn run(app: Arc<App>, open_window: bool) -> ! {
 }
 
 fn build(items: &Items) -> Result<TrayIcon> {
-    let menu = Menu::new();
+    let menu = items.menu.clone();
     menu.append_items(&[
-        &items.connected,
+        &items.header,
+        &items.no_devices,
+        &items.add_device,
+        &PredefinedMenuItem::separator(),
         &items.activity,
         &PredefinedMenuItem::separator(),
         &items.open,
-        &items.add_device,
         &items.pause,
         &PredefinedMenuItem::separator(),
         &items.update,
@@ -235,7 +255,7 @@ fn build(items: &Items) -> Result<TrayIcon> {
     let icon = Icon::from_rgba(icon.into_raw(), width, height)?;
     let builder = TrayIconBuilder::new()
         .with_menu(Box::new(menu))
-        .with_tooltip("CopyBlip");
+        .with_tooltip("Carryover");
     // macOS recolors template images for light and dark menu bars.
     #[cfg(target_os = "macos")]
     let builder = builder.with_icon_templated(icon);
@@ -272,10 +292,51 @@ fn edit_menu() {
     }
 }
 
-fn connected_line(status: &Status) -> String {
-    match status.connected.as_slice() {
-        [] => "No other devices connected".to_owned(),
-        names => format!("Connected to {}", names.join(", ")),
+/// Replaces the device rows, which sit right after the header.
+fn set_devices(items: &mut Items, devices: &[DeviceStatus]) {
+    for row in items.devices.drain(..) {
+        let _ = items.menu.remove(&row);
+    }
+    let _ = items.menu.remove(&items.no_devices);
+    if devices.is_empty() {
+        let _ = items.menu.insert(&items.no_devices, 1);
+        return;
+    }
+    for (index, device) in devices.iter().enumerate() {
+        let row = IconMenuItem::new(
+            &device.name,
+            true,
+            Some(picture(Kind::of(&device.name), device.connected)),
+            None,
+        );
+        let _ = items.menu.insert(&row, 1 + index);
+        items.devices.push(row);
+    }
+}
+
+fn picture(kind: Kind, online: bool) -> MenuIcon {
+    MenuIcon::from_rgba(avatar::draw(kind, online), avatar::SIZE, avatar::SIZE)
+        .expect("avatars are drawn at their stated size")
+}
+
+/// What a device row shows, to tell when the rows need redrawing.
+fn device_key(device: &DeviceStatus) -> String {
+    format!("{}\t{}\t{}", device.id, device.name, device.connected)
+}
+
+fn header_line(status: &Status) -> String {
+    if status.paused {
+        "Carryover · Paused".to_owned()
+    } else {
+        match status
+            .devices
+            .iter()
+            .filter(|device| device.connected)
+            .count()
+        {
+            0 => "Carryover".to_owned(),
+            n => format!("Carryover · {n} online"),
+        }
     }
 }
 
@@ -296,12 +357,12 @@ fn update_line(state: &State) -> String {
 
 fn tooltip(status: &Status) -> String {
     if status.paused {
-        "CopyBlip: paused".to_owned()
+        "Carryover: paused".to_owned()
     } else {
         match status.connected.len() {
-            0 => "CopyBlip: no other devices connected".to_owned(),
-            1 => "CopyBlip: connected to 1 device".to_owned(),
-            n => format!("CopyBlip: connected to {n} devices"),
+            0 => "Carryover: no other devices connected".to_owned(),
+            1 => "Carryover: connected to 1 device".to_owned(),
+            n => format!("Carryover: connected to {n} devices"),
         }
     }
 }

@@ -20,7 +20,7 @@ This Mac reports `alwaysAllow`, even for a brand new binary started outside T3 C
 The idea is that writing to the Mac's clipboard lets Universal Clipboard carry it to the iPhone, so the iPhone needs no app.
 
 - One write was advertised over Handoff. About 200 ms later a nearby device requested the types over Rapport, and the system logged the item as resumed on another device.
-- Every later write in the logged runs reached the Handoff daemon but wasn't advertised. Plain `pbcopy` behaved the same as CopyBlip, so CopyBlip's writes aren't the cause. The reason is unknown.
+- Every later write in the logged runs reached the Handoff daemon but wasn't advertised. Plain `pbcopy` behaved the same as Carryover, so Carryover's writes aren't the cause. The reason is unknown.
 - The logs redact the device's identity, so it may not have been an iPhone.
 
 To settle it, write to the clipboard on the Mac and paste on the iPhone:
@@ -45,7 +45,7 @@ Tested in the iOS 27.2 Simulator against a real agent:
 
 On a real iPhone 17 Pro (2026-11-02):
 
-- iPhone to Mac works through CopyBlip. The agent logged the clip from the phone.
+- iPhone to Mac works through Carryover. The agent logged the clip from the phone.
 - Mac to iPhone worked, but Universal Clipboard carried it, because the Mac and iPhone share an Apple account. The app then sent the same text back, which is harmless. The fetch path still needs a check with Handoff turned off.
 - Reported as slow, with pop-ups. Remembered addresses now skip the 1–3 second network search.
 - Once the agent stopped, the app blamed the pairing code. It now only does that when the encryption check fails.

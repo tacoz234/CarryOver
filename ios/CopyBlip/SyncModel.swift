@@ -86,9 +86,9 @@ final class SyncModel {
             defaults.set(device, forKey: "device")
         }
         group = Keychain.load().flatMap { GroupKey(bytes: $0) as GroupKey? }
-        manualAddresses = defaults.data(forKey: "manualAddresses")
-            .flatMap { try? JSONDecoder().decode([Address].self, from: $0) } ?? []
-        relay = defaults.string(forKey: "relay").flatMap(Relay.init(string:))
+        // Left by versions that could sync away from home.
+        defaults.removeObject(forKey: "manualAddresses")
+        defaults.removeObject(forKey: "relay")
         devices = defaults.data(forKey: "devices")
             .flatMap { try? JSONDecoder().decode([Device].self, from: $0) } ?? []
         history = (try? Data(contentsOf: Self.historyIndex))
@@ -99,9 +99,6 @@ final class SyncModel {
             // Scripts can't tap through the setup guide.
             defaults.set(true, forKey: "setupShown")
             if group != GroupKey(pairingCode: code) { _ = join(code: code) }
-        }
-        if let relay = ProcessInfo.processInfo.environment["COPYBLIP_RELAY"] {
-            _ = setRelay(relay)
         }
         #endif
         if group != nil { showSetupOnce() }
@@ -120,6 +117,13 @@ final class SyncModel {
         set { defaults.set(newValue, forKey: "handledChangeCount") }
     }
 
+    /// A copy the user wouldn't let Carryover paste. It isn't asked about
+    /// again, or the prompt and setup guide would keep coming back.
+    private var refusedChangeCount: Int? {
+        get { defaults.object(forKey: "refusedChangeCount") as? Int }
+        set { defaults.set(newValue, forKey: "refusedChangeCount") }
+    }
+
     /// The clip this phone last sent or received, so opening the app again
     /// doesn't rewrite the same clip.
     private var lastClipID: String? {
@@ -133,38 +137,6 @@ final class SyncModel {
         set { defaults.set(try? JSONEncoder().encode(newValue), forKey: "addresses") }
     }
 
-    /// Typed-in addresses, such as Tailscale names, tried along with remembered ones.
-    /// Stored, rather than read from defaults each time, so views update.
-    private(set) var manualAddresses: [Address] = [] {
-        didSet { defaults.set(try? JSONEncoder().encode(manualAddresses), forKey: "manualAddresses") }
-    }
-
-    private(set) var relay: Relay? {
-        didSet { defaults.set(relay?.base.absoluteString, forKey: "relay") }
-    }
-
-    /// Returns false if `text` isn't a host or address.
-    func addAddress(_ text: String) -> Bool {
-        guard let address = Address(parsing: text) else { return false }
-        if !manualAddresses.contains(address) { manualAddresses.append(address) }
-        return true
-    }
-
-    func removeAddresses(at offsets: IndexSet) {
-        manualAddresses.remove(atOffsets: offsets)
-    }
-
-    /// Clears the relay when `text` is empty. Returns false if it isn't a relay URL.
-    func setRelay(_ text: String) -> Bool {
-        if text.trimmingCharacters(in: .whitespaces).isEmpty {
-            relay = nil
-            return true
-        }
-        guard let parsed = Relay(string: text) else { return false }
-        relay = parsed
-        return true
-    }
-
     /// An invite opened from a link, waiting for the user to confirm.
     var pendingInvite: Invite?
 
@@ -173,26 +145,25 @@ final class SyncModel {
         showingSetup = false
         pendingInvite = Invite(url.absoluteString)
         if pendingInvite == nil {
-            status = .failed("That CopyBlip link isn't valid. Make a new one with `copyblip invite`.")
+            status = .failed("That Carryover link isn't valid. Make a new one with `copyblip invite`.")
         }
     }
 
     func acceptInvite() {
         guard let invite = pendingInvite else { return }
         pendingInvite = nil
-        _ = join(code: invite.group.pairingCode, relay: invite.relay)
+        _ = join(invite.group)
     }
 
     /// Accepts an invite link or a bare pairing code.
     func join(code: String) -> Bool {
         guard let invite = Invite(code) else { return false }
-        return join(code: invite.group.pairingCode, relay: invite.relay)
+        return join(invite.group)
     }
 
-    private func join(code: String, relay: Relay?) -> Bool {
-        guard let key = GroupKey(pairingCode: code), Keychain.save(key.bytes) else { return false }
+    private func join(_ key: GroupKey) -> Bool {
+        guard Keychain.save(key.bytes) else { return false }
         group = key
-        if let relay { self.relay = relay }
         lastClipID = nil
         syncedSinceOpen = false
         addresses = []
@@ -214,10 +185,7 @@ final class SyncModel {
 
     /// The link that adds a device to this group, as a QR code or pasted.
     var inviteLink: String? {
-        guard let group else { return nil }
-        var link = "copyblip://join?code=\(group.pairingCode)"
-        if let relay { link += "&relay=\(relay.base.absoluteString)" }
-        return link
+        group.map { "carryover://join?code=\($0.pairingCode)" }
     }
 
     func forgetDevices(at offsets: IndexSet) {
@@ -301,13 +269,18 @@ final class SyncModel {
         syncedSinceOpen = true
         let board = UIPasteboard.general
         if board.changeCount != handledChangeCount, board.hasStrings || board.hasImages {
+            // Neither sends nor fetches, so a copy the user hasn't shared isn't
+            // overwritten. Send Clipboard and Get Latest still work.
+            guard board.changeCount != refusedChangeCount else {
+                log.info("paste was refused for this copy already, not asking again")
+                return
+            }
             log.info("clipboard changed since last sync, sending")
             // This read is what shows "Allow Paste" unless the user allowed it in Settings.
-            // Left unhandled so a later open retries instead of fetching over
-            // a copy the user hasn't shared yet.
             guard let content = Self.read(board) else {
                 log.info("paste was refused")
-                status = .failed("CopyBlip wasn't allowed to paste, so nothing was sent.")
+                refusedChangeCount = board.changeCount
+                status = .failed("Carryover wasn't allowed to paste, so nothing was sent.")
                 showingSetup = true
                 return
             }
@@ -406,11 +379,7 @@ final class SyncModel {
     }
 
     private var client: SyncClient? {
-        group.map {
-            // Typed-in addresses first, then any others that worked last time.
-            let remembered = manualAddresses + addresses.filter { !manualAddresses.contains($0) }
-            return SyncClient(group: $0, device: device, name: UIDevice.current.name, remembered: remembered, relay: relay)
-        }
+        group.map { SyncClient(group: $0, device: device, name: UIDevice.current.name, remembered: addresses) }
     }
 
     /// Updates who's online, and adds devices the computers know about that
@@ -447,10 +416,10 @@ final class SyncModel {
             } catch SyncError.noDevices {
                 // Nothing answered, so nothing is known to be online.
                 online = []
-                status = .failed("No devices found. Make sure CopyBlip is running on your computer and you're on the same Wi-Fi.")
+                status = .failed("No devices found. Make sure Carryover is running on your computer and you're on the same Wi-Fi.")
             } catch SyncError.unreachable {
                 online = []
-                status = .failed("Couldn't connect to your computer. Make sure CopyBlip is running on it.")
+                status = .failed("Couldn't connect to your computer. Make sure Carryover is running on it.")
             } catch SyncError.wrongCode {
                 online = []
                 status = .failed("Your computer rejected this phone. Leave the group and join again with the current pairing code.")

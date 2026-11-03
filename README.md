@@ -1,6 +1,6 @@
-<img src="assets/icon-rounded.png" width="96" height="96" alt="CopyBlip icon">
+<img src="assets/icon-rounded.png" width="96" height="96" alt="Carryover icon">
 
-# CopyBlip
+# Carryover
 
 A shared clipboard across your Mac, Windows and iPhone devices. Copy on one, paste on another.
 
@@ -31,18 +31,18 @@ For the iPhone, open `ios/CopyBlip.xcodeproj` in Xcode and run it on your phone,
 
 On a Mac, `desktop/scripts/install-mac-agent.sh` keeps the agent running as a login item with a menu bar icon, and `uninstall-mac-agent.sh` removes it. The log is in `~/Library/Logs/CopyBlip.log`.
 
-For a PC, `desktop/scripts/package-windows.ps1` (on a PC) or `package-windows.sh` (on a Mac) builds a zip. On the PC, run `setup.cmd` from it. It asks whether to join an existing group, using the invite link from any computer in it (**Add a Device** in its window), or to start a new one, and installs the WebView2 runtime if the PC lacks it. CopyBlip then appears in the notification area. Pass `-WithGroup` or `--with-group` to build a zip that's already joined to the building computer's group.
+For a PC, `desktop/scripts/package-windows.ps1` (on a PC) or `package-windows.sh` (on a Mac) builds a zip. On the PC, run `setup.cmd` from it. It asks whether to join an existing group, using the invite link from any computer in it (**Add a Device** in its window), or to start a new one, and installs the WebView2 runtime if the PC lacks it. Carryover then appears in the notification area. Pass `-WithGroup` or `--with-group` to build a zip that's already joined to the building computer's group.
 
-The menu bar and notification area icons show what's connected and what last synced. **Open CopyBlip…** in their menu opens the main window (on Windows, clicking the icon does too), which has:
+The menu bar and notification area icons show what's connected and what last synced. **Open Carryover…** in their menu opens the main window (on Windows, clicking the icon does too), which has:
 
 - **Devices:** every device in the group, with a green dot for the ones online, including ones connected through another computer.
 - **Recent:** the last 20 clips sent or received, with image thumbnails. Click one to copy it again.
 - **Add a Device:** a QR code for the iPhone and an invite link for computers.
-- **Settings:** pause syncing, open at login, updates, the relay and Tailscale addresses, and the log.
+- **Settings:** pause syncing, open at login, updates, and the log.
 
 Computers update themselves from signed releases; see [updates](docs/updates.md).
 
-Devices on the same network find each other. For other networks, use Tailscale or the relay; see [away from home](docs/away-from-home.md).
+Devices on the same Wi-Fi find each other. They need to be on the same network to sync.
 
 The pairing code is the group's only secret, so treat it like a password. Anyone who has it can read everything the group copies.
 
@@ -51,8 +51,7 @@ On Windows, allow `copyblip` through the firewall when asked. On macOS, choose A
 ## Docs
 
 - [iPhone setup](docs/iphone-setup.md): permissions and how to use it
-- [Away from home](docs/away-from-home.md): Tailscale and the relay
 - [Updates](docs/updates.md): how computers update, and publishing a release
-- [Relay](relay/README.md): deploying it to Cloudflare
 - [Findings](docs/findings.md): what's been tested and what iOS allows
+- [Design](docs/design.md): colors, icon, layout and wording
 - [Protocol](docs/protocol.md): the wire format

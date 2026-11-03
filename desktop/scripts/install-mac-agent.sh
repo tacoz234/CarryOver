@@ -39,4 +39,4 @@ for attempt in 1 2 3 4 5 6 7 8 9 10; do
   [ "$attempt" = 10 ] && launchctl bootstrap "gui/$(id -u)" "$plist"
   sleep 1
 done
-echo "CopyBlip is running and will start at login. Log: $log"
+echo "Carryover is running and will start at login. Log: $log"

@@ -148,7 +148,7 @@ fn feed() -> String {
 fn get(url: &str, limit: u64) -> Result<Vec<u8>> {
     let agent = ureq::Agent::config_builder()
         .timeout_global(Some(Duration::from_secs(120)))
-        .user_agent(format!("CopyBlip/{VERSION}"))
+        .user_agent(format!("Carryover/{VERSION}"))
         .build()
         .new_agent();
     let mut response = agent
@@ -342,7 +342,7 @@ impl Updater {
             let automatic = self.automatic.load(Ordering::Relaxed) && !cfg!(debug_assertions);
             if chosen || automatic {
                 self.set(State::Installing(release.version.clone()));
-                eprintln!("installing CopyBlip {}", release.version);
+                eprintln!("installing Carryover {}", release.version);
                 match download(&release).and_then(|program| install(&program)) {
                     Ok(()) => self.set(State::Ready(release.version)),
                     Err(error) => {
@@ -354,7 +354,7 @@ impl Updater {
                     }
                 }
             } else {
-                eprintln!("CopyBlip {} is available", release.version);
+                eprintln!("Carryover {} is available", release.version);
                 self.set(State::Available(release));
             }
         }

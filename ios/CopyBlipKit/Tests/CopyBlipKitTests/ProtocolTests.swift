@@ -66,42 +66,15 @@ private func body(_ frame: Data) throws -> Data {
     }
 }
 
-@Test func relayRoomMatchesDesktop() {
-    // Same value as relay_room_differs_from_group_tag in desktop/src/protocol.rs.
-    #expect(GroupKey(bytes: Data(repeating: 1, count: 32)).relayRoom == "b516525745f11172a676fbd38a1be4e1")
-}
-
-@Test func relayURLsAreNormalized() {
-    #expect(Relay(string: "https://relay.example.dev/")?.base.absoluteString == "https://relay.example.dev")
-    #expect(Relay(string: "wss://relay.example.dev")?.base.absoluteString == "https://relay.example.dev")
-    #expect(Relay(string: "http://127.0.0.1:8787")?.base.absoluteString == "http://127.0.0.1:8787")
-    #expect(Relay(string: "relay.example.dev") == nil)
-    #expect(Relay(string: "https://relay.example.dev/some/path") == nil)
-    let group = GroupKey(bytes: Data(repeating: 1, count: 32))
-    let pipe = Relay(string: "https://relay.example.dev")!.pipe(group: group, from: "phone", to: "mac")
-    #expect(pipe.absoluteString == "wss://relay.example.dev/v1/rooms/b516525745f11172a676fbd38a1be4e1/dial?device=phone&to=mac")
-}
-
-@Test func typedAddressesGetTheDefaultPort() {
-    #expect(Address(parsing: "macmini") == Address(host: "macmini", port: 47820))
-    #expect(Address(parsing: " 100.64.0.1:5000 ") == Address(host: "100.64.0.1", port: 5000))
-    #expect(Address(parsing: "fd7a:115c::1") == Address(host: "fd7a:115c::1", port: 47820))
-    #expect(Address(parsing: "[fd7a:115c::1]:9") == Address(host: "fd7a:115c::1", port: 9))
-    #expect(Address(parsing: "host:notaport") == nil)
-    #expect(Address(parsing: "") == nil)
-    #expect(Address(parsing: "https://example.com") == nil)
-    #expect(Address(host: "fd7a::1", port: 9).description == "[fd7a::1]:9")
-}
-
 @Test func invitesParseLinksAndBareCodes() {
     let group = GroupKey(bytes: Data(repeating: 7, count: 32))
-    let link = "copyblip://join?code=\(group.pairingCode)&relay=https://relay.example.dev"
-    #expect(Invite(link)?.group == group)
-    #expect(Invite(link)?.relay == Relay(string: "https://relay.example.dev"))
-    #expect(Invite(" \(group.pairingCode)\n")?.relay == nil)
-    #expect(Invite("copyblip://join?code=\(group.pairingCode)")?.relay == nil)
+    #expect(Invite("carryover://join?code=\(group.pairingCode)")?.group == group)
+    // From before the rename.
+    #expect(Invite("copyblip://join?code=\(group.pairingCode)")?.group == group)
+    #expect(Invite(" \(group.pairingCode)\n")?.group == group)
+    // Links from versions that had a relay still work.
+    #expect(Invite("copyblip://join?code=\(group.pairingCode)&relay=https://relay.example.dev")?.group == group)
     #expect(Invite("copyblip://join?relay=https://relay.example.dev") == nil)
-    #expect(Invite("copyblip://join?code=\(group.pairingCode)&relay=nonsense") == nil)
     #expect(Invite("https://example.com/join?code=\(group.pairingCode)") == nil)
 }
 

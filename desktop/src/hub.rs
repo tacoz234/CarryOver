@@ -478,8 +478,7 @@ impl Hub {
     }
 
     /// Keeps a connection to `targets` up, retrying until the list is emptied.
-    /// Targets are `host:port`, looked up on each attempt so names like
-    /// Tailscale's follow address changes.
+    /// Targets are `host:port`, looked up on each attempt.
     pub fn dial(self: &Arc<Self>, targets: Arc<Mutex<Vec<String>>>) {
         let hub = self.clone();
         thread::spawn(move || {
@@ -508,9 +507,8 @@ impl Hub {
         });
     }
 
-    /// Runs one connection until it ends. Relayed connections arrive as a
-    /// local socket, so they use this too.
-    pub(crate) fn run_connection(&self, mut stream: TcpStream, role: Role) -> Result<()> {
+    /// Runs one connection until it ends.
+    fn run_connection(&self, mut stream: TcpStream, role: Role) -> Result<()> {
         stream.set_nodelay(true)?;
         stream.set_read_timeout(Some(HANDSHAKE_TIMEOUT))?;
         let (mut sealer, mut opener) = handshake(&mut stream, &self.key, role)?;

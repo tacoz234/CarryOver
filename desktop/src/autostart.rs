@@ -1,4 +1,4 @@
-//! Starting CopyBlip at login, with its tray icon.
+//! Starting Carryover at login, with its tray icon.
 //!
 //! - **macOS:** a LaunchAgent, the same one `scripts/install-mac-agent.sh`
 //!   writes. Turning it off removes the file but leaves this run going.

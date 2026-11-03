@@ -45,9 +45,27 @@ fn available(format: u32) -> bool {
 }
 
 /// Formats that mark content as not for syncing. Password managers set these.
-fn marked_private() -> bool {
-    available(format(w!("ExcludeClipboardContentFromMonitorProcessing")))
+fn marked_private() -> Result<bool> {
+    if available(format(w!("ExcludeClipboardContentFromMonitorProcessing")))
         || available(format(w!("Clipboard Viewer Ignore")))
+    {
+        return Ok(true);
+    }
+    // Windows' own opt-outs from clipboard history and cloud sync: a DWORD
+    // of 0 means "keep this off other devices", which is what Carryover does.
+    for name in [
+        w!("CanUploadToCloudClipboard"),
+        w!("CanIncludeInClipboardHistory"),
+    ] {
+        let format = format(name);
+        if available(format) {
+            let _open = OpenGuard::acquire()?;
+            if bytes(format)?.iter().take(4).all(|&byte| byte == 0) {
+                return Ok(true);
+            }
+        }
+    }
+    Ok(false)
 }
 
 /// Copies a format's bytes. Must be called with the clipboard open.
@@ -91,7 +109,7 @@ impl Clipboard for WindowsClipboard {
     }
 
     fn read(&self) -> Result<Option<Content>> {
-        if marked_private() {
+        if marked_private()? {
             return Ok(None);
         }
         let text = CF_UNICODETEXT.0 as u32;

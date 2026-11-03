@@ -95,7 +95,7 @@ impl History {
     fn save_image(&mut self, id: &str, png: &[u8]) -> Result<()> {
         match &self.dir {
             Some(dir) => {
-                std::fs::create_dir_all(dir)?;
+                private_dir(dir)?;
                 std::fs::write(dir.join(format!("{id}.png")), png)?;
             }
             None => {
@@ -153,8 +153,7 @@ impl History {
     fn changed(&mut self) {
         self.version += 1;
         if let Some(dir) = &self.dir {
-            let result = std::fs::create_dir_all(dir)
-                .map_err(anyhow::Error::from)
+            let result = private_dir(dir)
                 .and_then(|()| Ok(serde_json::to_vec(&self.entries)?))
                 .and_then(|json| Ok(std::fs::write(dir.join("history.json"), json)?));
             if let Err(error) = result {
@@ -204,6 +203,18 @@ impl History {
         self.thumbnails.insert(id.to_owned(), made.clone());
         Some(made)
     }
+}
+
+/// Clips can be anything copied, so only this user may read them. On
+/// Windows, %APPDATA% is already private to the user.
+fn private_dir(dir: &std::path::Path) -> Result<()> {
+    std::fs::create_dir_all(dir)?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o700))?;
+    }
+    Ok(())
 }
 
 fn make_thumbnail(png: &[u8]) -> Result<String> {

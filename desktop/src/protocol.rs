@@ -171,7 +171,7 @@ pub fn handshake<S: Read + Write>(
     let mut reply = [0u8; MAGIC.len() + NONCE_LEN];
     stream.read_exact(&mut reply)?;
     if &reply[..MAGIC.len()] != MAGIC {
-        bail!("peer is not speaking CopyBlip v1");
+        bail!("peer is not speaking Carryover v1");
     }
     let theirs = &reply[MAGIC.len()..];
 
@@ -207,15 +207,6 @@ pub fn group_tag(key: &GroupKey) -> String {
         .expand(b"copyblip v1 group tag", &mut tag)
         .expect("8 bytes is a valid HKDF length");
     hex::encode(tag)
-}
-
-/// The relay room for a group. Derived from the key, so only members can find it.
-pub fn relay_room(key: &GroupKey) -> String {
-    let mut room = [0u8; 16];
-    Hkdf::<Sha256>::new(None, key)
-        .expand(b"copyblip v1 relay room", &mut room)
-        .expect("16 bytes is a valid HKDF length");
-    hex::encode(room)
 }
 
 #[cfg(test)]
@@ -348,16 +339,6 @@ mod tests {
     fn group_tag_differs_by_key_and_hides_it() {
         assert_ne!(group_tag(&[1; 32]), group_tag(&[2; 32]));
         assert_eq!(group_tag(&[1; 32]).len(), 16);
-    }
-
-    /// Also checked by the iOS tests, so both sides must agree on it.
-    #[test]
-    fn relay_room_differs_from_group_tag() {
-        let key = [1; 32];
-        assert_eq!(relay_room(&key).len(), 32);
-        assert!(!relay_room(&key).starts_with(&group_tag(&key)));
-        // Also checked by the iOS tests.
-        assert_eq!(relay_room(&key), "b516525745f11172a676fbd38a1be4e1");
     }
 
     #[test]

@@ -2,10 +2,10 @@ use anyhow::{Context, Result, bail};
 use clap::{Parser, Subcommand};
 use copyblip::clipboard::{Clipboard, Content};
 use copyblip::config::{self, Config, DEFAULT_PORT};
-use copyblip::{discovery, hub::Hub, relay, update};
+use copyblip::{discovery, hub::Hub, update};
 use std::net::TcpListener;
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 #[derive(Parser)]
 #[command(version, about = "Shared clipboard across your devices")]
@@ -33,37 +33,10 @@ enum Command {
     PairingCode,
     /// Show a QR code for adding a device. Scan it with the iPhone's camera
     Invite,
-    /// Manage addresses to connect to besides the local network, such as
-    /// Tailscale names. Restart `run` to apply changes
-    Peer {
-        #[command(subcommand)]
-        action: PeerAction,
-    },
-    /// Show, set or remove the relay for syncing across networks. Restart
-    /// `run` to apply changes
-    Relay {
-        /// Relay URL, such as https://copyblip-relay.example.workers.dev
-        url: Option<String>,
-        /// Stop using a relay
-        #[arg(long, conflicts_with = "url")]
-        off: bool,
-    },
     /// Sync the clipboard until stopped
     Run {
         #[arg(long, default_value_t = DEFAULT_PORT)]
         port: u16,
-        /// Also connect to this address, on top of saved peers
-        #[arg(long = "peer")]
-        peers: Vec<String>,
-        /// Use this relay instead of the saved one
-        #[arg(long, conflicts_with = "no_relay")]
-        relay: Option<String>,
-        /// Don't use the saved relay
-        #[arg(long)]
-        no_relay: bool,
-        /// Don't advertise or look for devices on the local network
-        #[arg(long)]
-        no_discovery: bool,
         /// Use a private pasteboard instead of the real clipboard (macOS, for testing)
         #[arg(long)]
         pasteboard: Option<String>,
@@ -121,16 +94,6 @@ fn read_release_key(path: &std::path::Path) -> Result<[u8; 32]> {
         .ok()
         .and_then(|bytes| bytes.try_into().ok())
         .context("release key is malformed")
-}
-
-#[derive(Subcommand)]
-enum PeerAction {
-    /// Add an address, as host or host:port
-    Add { address: String },
-    /// Remove an address
-    Remove { address: String },
-    /// List saved addresses
-    List,
 }
 
 #[cfg(target_os = "macos")]
@@ -248,9 +211,7 @@ fn main() -> Result<()> {
             eprintln!("Paste the invite link or pairing code, then press Enter:");
             let mut code = String::new();
             std::io::stdin().read_line(&mut code)?;
-            let (key, relay) = config::parse_invite(&code)?;
-            let mut config = Config::new(&key);
-            config.relay = relay;
+            let config = Config::new(&config::parse_invite(&code)?);
             config.save(&dir, force)?;
             println!("Joined. Start syncing with `copyblip run`.");
         }
@@ -258,56 +219,14 @@ fn main() -> Result<()> {
         Command::Invite => {
             let link = Config::load(&dir)?.invite_link();
             println!("{}", qr(&link)?);
-            println!("On an iPhone, scan this with the Camera app and tap the CopyBlip link.");
+            println!("On an iPhone, scan this with the Camera app and tap the Carryover link.");
             println!("On a computer, run `copyblip join` and paste this link:\n{link}");
             println!(
                 "Anyone with this code can read what you copy, so only share it with your own devices."
             );
         }
-        Command::Peer { action } => {
-            let mut config = Config::load(&dir)?;
-            match action {
-                PeerAction::Add { address } => {
-                    let address = config::normalize_peer(&address)?;
-                    if !config.peers.contains(&address) {
-                        config.peers.push(address.clone());
-                        config.update(&dir)?;
-                    }
-                    println!("Saved {address}.");
-                }
-                PeerAction::Remove { address } => {
-                    let address = config::normalize_peer(&address)?;
-                    let before = config.peers.len();
-                    config.peers.retain(|peer| *peer != address);
-                    if config.peers.len() == before {
-                        bail!("{address} isn't saved");
-                    }
-                    config.update(&dir)?;
-                    println!("Removed {address}.");
-                }
-                PeerAction::List => config.peers.iter().for_each(|peer| println!("{peer}")),
-            }
-        }
-        Command::Relay { url, off } => {
-            let mut config = Config::load(&dir)?;
-            if off {
-                config.relay = None;
-                config.update(&dir)?;
-                println!("Relay turned off.");
-            } else if let Some(url) = url {
-                config.relay = Some(config::normalize_relay(&url)?);
-                config.update(&dir)?;
-                println!("Relay saved.");
-            } else {
-                println!("{}", config.relay.as_deref().unwrap_or("No relay set."));
-            }
-        }
         Command::Run {
             port,
-            peers,
-            relay: relay_override,
-            no_relay,
-            no_discovery,
             pasteboard,
             background,
             tray,
@@ -332,19 +251,9 @@ fn main() -> Result<()> {
                 clipboard,
             );
             hub.serve(listener);
-            for peer in peers {
-                hub.dial(Arc::new(Mutex::new(vec![config::normalize_peer(&peer)?])));
-            }
-            if !no_discovery {
-                discovery::start(hub.clone(), &key, &config.device, port)?;
-            }
-            let relay_url = match relay_override {
-                Some(url) => Some(config::normalize_relay(&url)?),
-                None if no_relay => None,
-                None => config.relay.clone(),
-            };
+            discovery::start(hub.clone(), &key, &config.device, port)?;
             hub.watch_clipboard();
-            eprintln!("CopyBlip {} syncing on port {port}", update::VERSION);
+            eprintln!("Carryover {} syncing on port {port}", update::VERSION);
             if tray {
                 #[cfg(target_os = "macos")]
                 let log = PathBuf::from(std::env::var_os("HOME").context("no home folder")?)
@@ -353,14 +262,8 @@ fn main() -> Result<()> {
                 let log = dir.join("copyblip.log");
                 hub.remember_devices(dir.join("devices.json"));
                 hub.keep_history(dir.join("history"));
-                let app = copyblip::app::App::start(hub, dir, config, relay_url, log)?;
+                let app = copyblip::app::App::start(hub, dir, config, log)?;
                 copyblip::tray::run(app, window);
-            }
-            for peer in &config.peers {
-                hub.dial(Arc::new(Mutex::new(vec![peer.clone()])));
-            }
-            if let Some(url) = relay_url {
-                relay::start(hub.clone(), url, &key, &config.device);
             }
             loop {
                 std::thread::park();

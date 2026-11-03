@@ -35,9 +35,9 @@ cp target/x86_64-pc-windows-gnu/release/copyblip.exe "$stage/copyblip-windows-x8
 target/release/copyblip release-manifest --key "$key" --version "$version" --notes "$notes" "$stage"
 
 if [ -n "$stage_only" ]; then
-  echo "Staged CopyBlip $version in $stage"
+  echo "Staged Carryover $version in $stage"
   exit 0
 fi
-gh release create "v$version" --repo "$repo" --title "CopyBlip $version" --notes "${notes:-CopyBlip $version}" \
+gh release create "v$version" --repo "$repo" --title "Carryover $version" --notes "${notes:-Carryover $version}" \
   "$stage"/copyblip-* "$stage/manifest.json" "$stage/manifest.json.sig"
-echo "Published CopyBlip $version. Installed copies pick it up within 6 hours, or at their next start."
+echo "Published Carryover $version. Installed copies pick it up within 6 hours, or at their next start."

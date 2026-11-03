@@ -9,8 +9,6 @@ struct Setup {
     let key: GroupKey
     let ports: [UInt16]
 
-    static let relay = ProcessInfo.processInfo.environment["COPYBLIP_TEST_RELAY"].flatMap(Relay.init(string:))
-
     static let current: Setup? = {
         let parts = (ProcessInfo.processInfo.environment["COPYBLIP_INTEROP"] ?? "").split(separator: " ")
         guard parts.count >= 2, let key = GroupKey(pairingCode: String(parts[0])) else { return nil }
@@ -93,49 +91,5 @@ struct DesktopInteropTests {
         #expect(found.count >= setup.ports.count)
         let other = await Discovery.find(group: GroupKey(bytes: Data(repeating: 9, count: 32)), timeout: .seconds(1))
         #expect(other.isEmpty)
-    }
-}
-
-@Suite(.enabled(if: Setup.current != nil && Setup.relay != nil), .serialized)
-struct RelayInteropTests {
-    let setup = Setup.current!
-
-    /// A client that can only reach the computers through the relay.
-    func relayOnly() -> SyncClient {
-        SyncClient(group: setup.key, device: "test-phone", name: "Test iPhone", relay: Setup.relay, endpoints: { [] })
-    }
-
-    @Test func sendReachesBothComputersThroughTheRelay() async throws {
-        let (sent, addresses) = try await relayOnly().send(.text("relayed \(UUID())"))
-        #expect(sent.to.count == setup.ports.count)
-        #expect(addresses.isEmpty)
-    }
-
-    @Test func latestAndImagesWorkThroughTheRelay() async throws {
-        let png = Data((0..<700_000).map { UInt8($0 % 253) })
-        let (sent, _) = try await relayOnly().send(.image(png))
-        try await Task.sleep(for: .milliseconds(500))
-        let (received, _, _) = try await relayOnly().latest()
-        #expect(received?.id == sent.id)
-        #expect(received?.content == .image(png))
-    }
-
-    @Test func directConnectionsDontUseTheRelay() async throws {
-        let unusable = Relay(string: "http://127.0.0.1:1")
-        let client = SyncClient(group: setup.key, device: "test-phone", name: "Test iPhone", relay: unusable, endpoints: {
-            setup.ports.map { .hostPort(host: "127.0.0.1", port: NWEndpoint.Port(rawValue: $0)!) }
-        })
-        let started = ContinuousClock.now
-        let (sent, _) = try await client.send(.text("direct \(UUID())"))
-        #expect(sent.to.count == setup.ports.count)
-        #expect(ContinuousClock.now - started < SyncClient.relayDelay)
-    }
-
-    @Test func wrongGroupFindsNobodyOnTheRelay() async {
-        let outsider = SyncClient(
-            group: GroupKey(bytes: Data(repeating: 9, count: 32)), device: "x", name: "x",
-            relay: Setup.relay, endpoints: { [] }
-        )
-        await #expect(throws: SyncError.noDevices) { try await outsider.send(.text("nope")) }
     }
 }

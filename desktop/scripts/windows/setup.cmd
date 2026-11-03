@@ -1,6 +1,6 @@
 @echo off
 setlocal
-rem Installs CopyBlip for this Windows user, joins or starts a group, starts it
+rem Installs Carryover for this Windows user, joins or starts a group, starts it
 rem at sign-in with an icon in the notification area, and starts it now.
 set "app=%LOCALAPPDATA%\CopyBlip"
 set "conf=%APPDATA%\CopyBlip"
@@ -25,9 +25,9 @@ call :webview
 reg add "HKCU\Software\Microsoft\Windows\CurrentVersion\Run" /v CopyBlip /t REG_SZ /d "\"%app%\copyblip.exe\" run --background --tray" /f >nul || goto failed
 start "" "%app%\copyblip.exe" run --background --tray
 echo.
-echo CopyBlip is installed and running. Look for its icon in the notification
+echo Carryover is installed and running. Look for its icon in the notification
 echo area. Windows may tuck it under the ^^ arrow next to the clock.
-echo If Windows asks about the firewall, allow CopyBlip on private networks.
+echo If Windows asks about the firewall, allow Carryover on private networks.
 echo.
 echo To add another computer, click the icon, choose Add a Device, then Show
 echo Link, and paste the link into setup on that computer.
@@ -37,9 +37,9 @@ exit /b 0
 
 :pair
 echo.
-echo This PC isn't in a CopyBlip group yet.
+echo This PC isn't in a Carryover group yet.
 echo.
-echo   J  Join an existing group. On a computer already in it, open CopyBlip,
+echo   J  Join an existing group. On a computer already in it, open Carryover,
 echo      choose Add a Device, then Show Link, and copy the link. If its window
 echo      won't open: on a PC, double-click invite.cmd in
 echo      %%LOCALAPPDATA%%\CopyBlip; on a Mac, run "copyblip invite".
@@ -54,7 +54,7 @@ if errorlevel 2 (
 echo That didn't work. Try again.
 goto pair
 
-rem CopyBlip's window needs Microsoft's WebView2 runtime. Windows 11 usually
+rem Carryover's window needs Microsoft's WebView2 runtime. Windows 11 usually
 rem has it, but not always. Syncing works without it.
 :webview
 set "client=Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}"
@@ -62,11 +62,11 @@ reg query "HKLM\SOFTWARE\WOW6432Node\%client%" /v pv >nul 2>&1 && exit /b 0
 reg query "HKLM\SOFTWARE\%client%" /v pv >nul 2>&1 && exit /b 0
 reg query "HKCU\Software\%client%" /v pv >nul 2>&1 && exit /b 0
 echo.
-echo Installing Microsoft's WebView2 runtime, which CopyBlip's window needs...
+echo Installing Microsoft's WebView2 runtime, which Carryover's window needs...
 set "bootstrap=%TEMP%\MicrosoftEdgeWebview2Setup.exe"
 curl.exe -sSfL -o "%bootstrap%" "https://go.microsoft.com/fwlink/p/?LinkId=2124703" && "%bootstrap%" /silent /install
 if errorlevel 1 (
-  echo Couldn't install WebView2. CopyBlip still syncs, but its window won't
+  echo Couldn't install WebView2. Carryover still syncs, but its window won't
   echo open until you install the WebView2 Runtime from Microsoft's website.
 )
 del "%bootstrap%" >nul 2>&1
@@ -76,7 +76,7 @@ exit /b 0
 echo.
 echo copyblip.exe is missing. Windows Security probably removed it. Open
 echo Windows Security, Virus and threat protection, Protection history, and
-echo allow CopyBlip, or add an exclusion for this folder and
+echo allow Carryover, or add an exclusion for this folder and
 echo %app%
 echo then extract the zip again and rerun setup.
 pause

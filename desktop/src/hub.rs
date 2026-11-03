@@ -1,6 +1,9 @@
 //! Moves clips between the local clipboard and connected peers.
 use crate::clipboard::{Clipboard, Content};
-use crate::protocol::{GroupKey, MAX_IMAGE, MAX_TEXT, Message, Opener, Role, Sealer, handshake};
+use crate::history::{Direction, History};
+use crate::protocol::{
+    GroupKey, MAX_IMAGE, MAX_TEXT, Message, Opener, Presence, Role, Sealer, handshake,
+};
 use anyhow::{Result, bail};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
@@ -78,6 +81,8 @@ struct Peer {
     device: String,
     name: String,
     sender: Sender<Message>,
+    /// The devices this peer last said it knows about.
+    reported: Vec<Presence>,
 }
 
 /// The last clip sent or received, for the tray menu.
@@ -100,7 +105,10 @@ pub struct Status {
 pub struct DeviceStatus {
     pub id: String,
     pub name: String,
+    /// Connected here, or to a device connected here.
     pub connected: bool,
+    /// When connected only through another device, that device's name.
+    pub via: Option<String>,
     /// Seconds since the Unix epoch when it was last connected.
     pub last_seen: u64,
 }
@@ -132,6 +140,29 @@ impl Devices {
         self.save();
     }
 
+    /// Learns about devices from a peer's report. Doesn't overwrite what
+    /// this device saw itself with older news.
+    fn merge(&mut self, reports: &[Presence], own: &str) {
+        let mut changed = false;
+        for report in reports.iter().filter(|report| report.device != own) {
+            let known = self.known.entry(report.device.clone()).or_insert_with(|| {
+                changed = true;
+                Known {
+                    name: report.name.clone(),
+                    last_seen: 0,
+                }
+            });
+            if report.last_seen > known.last_seen {
+                known.last_seen = report.last_seen;
+                known.name = report.name.clone();
+                changed = true;
+            }
+        }
+        if changed {
+            self.save();
+        }
+    }
+
     fn save(&self) {
         if let Some(path) = &self.path {
             let result = serde_json::to_vec_pretty(&self.known)
@@ -158,6 +189,7 @@ pub struct Hub {
     state: Mutex<State>,
     paused: AtomicBool,
     devices: Mutex<Devices>,
+    pub history: Mutex<History>,
 }
 
 impl Hub {
@@ -175,6 +207,7 @@ impl Hub {
             state: Mutex::new(State::default()),
             paused: AtomicBool::new(false),
             devices: Mutex::new(Devices::default()),
+            history: Mutex::new(History::default()),
         })
     }
 
@@ -204,11 +237,63 @@ impl Hub {
         };
     }
 
+    /// Loads and keeps saving the clip history in `dir`.
+    pub fn keep_history(&self, dir: PathBuf) {
+        *self.history.lock().unwrap() = History::open(dir);
+    }
+
+    /// Puts a clip from the history back on the clipboard. It isn't sent
+    /// again, since the other devices had it already.
+    pub fn copy_again(&self, id: &str) -> Result<()> {
+        let content = self.history.lock().unwrap().content(id)?;
+        // Marked as already shared, so the watcher doesn't send it.
+        self.state.lock().unwrap().last_hash = Some(content.digest());
+        self.clipboard.write(&content)
+    }
+
     /// Drops a device from the list. It reappears if it connects again.
     pub fn forget(&self, device: &str) {
         let mut devices = self.devices.lock().unwrap();
         devices.known.remove(device);
         devices.save();
+    }
+
+    /// What this device knows, as sent to peers.
+    fn presence(&self, state: &State) -> Vec<Presence> {
+        let live: HashSet<&str> = state
+            .peers
+            .values()
+            .map(|peer| peer.device.as_str())
+            .collect();
+        self.devices
+            .lock()
+            .unwrap()
+            .known
+            .iter()
+            .map(|(id, known)| Presence {
+                device: id.clone(),
+                name: known.name.clone(),
+                connected: live.contains(id.as_str()),
+                last_seen: known.last_seen,
+            })
+            .collect()
+    }
+
+    /// Tells peers what changed, after a connection starts or ends.
+    fn announce(&self, except: Option<u64>) {
+        let state = self.state.lock().unwrap();
+        let message = Message::Devices {
+            devices: self.presence(&state),
+        };
+        state.broadcast(&message, except);
+    }
+
+    fn reported(&self, connection: u64, devices: Vec<Presence>) {
+        let mut state = self.state.lock().unwrap();
+        self.devices.lock().unwrap().merge(&devices, &self.device);
+        if let Some(peer) = state.peers.get_mut(&connection) {
+            peer.reported = devices;
+        }
     }
 
     pub fn status(&self) -> Status {
@@ -228,11 +313,27 @@ impl Hub {
             .unwrap()
             .known
             .iter()
-            .map(|(id, known)| DeviceStatus {
-                id: id.clone(),
-                name: known.name.clone(),
-                connected: live.contains(id.as_str()),
-                last_seen: known.last_seen,
+            .map(|(id, known)| {
+                let direct = live.contains(id.as_str());
+                // Only direct reports count, so a device that left can't be
+                // kept online by peers repeating each other.
+                let via = (!direct)
+                    .then(|| {
+                        state.peers.values().find(|peer| {
+                            peer.reported
+                                .iter()
+                                .any(|report| report.device == *id && report.connected)
+                        })
+                    })
+                    .flatten()
+                    .map(|peer| peer.name.clone());
+                DeviceStatus {
+                    id: id.clone(),
+                    name: known.name.clone(),
+                    connected: direct || via.is_some(),
+                    via,
+                    last_seen: known.last_seen,
+                }
             })
             .collect();
         devices.sort_by_key(|device| std::cmp::Reverse((device.connected, device.last_seen)));
@@ -310,9 +411,14 @@ impl Hub {
             description: format!("Sent {}", content.kind()),
             at: Instant::now(),
         });
-        let message = to_message(id, content);
+        let message = to_message(id.clone(), content.clone());
         state.broadcast(&message, None);
         state.last_clip = Some(message);
+        drop(state);
+        self.history
+            .lock()
+            .unwrap()
+            .add(Direction::Sent, None, &id, &content);
     }
 
     fn remote_clip(&self, connection: u64, id: String, content: Content) {
@@ -324,7 +430,7 @@ impl Hub {
             return;
         }
         let digest = content.digest();
-        let message = to_message(id, content.clone());
+        let message = to_message(id.clone(), content.clone());
         if state.last_hash == Some(digest) {
             // Already on this clipboard, e.g. the phone sending back something it
             // got through Universal Clipboard. Every device that set last_hash
@@ -346,6 +452,10 @@ impl Hub {
         state.broadcast(&message, Some(connection));
         state.last_clip = Some(message);
         drop(state);
+        self.history
+            .lock()
+            .unwrap()
+            .add(Direction::Received, Some(from), &id, &content);
         eprintln!("received {}", content.describe());
         if let Err(error) = self.clipboard.write(&content) {
             eprintln!("could not write clipboard: {error:#}");
@@ -404,15 +514,22 @@ impl Hub {
         stream.set_nodelay(true)?;
         stream.set_read_timeout(Some(HANDSHAKE_TIMEOUT))?;
         let (mut sealer, mut opener) = handshake(&mut stream, &self.key, role)?;
+        let devices = self.presence(&self.state.lock().unwrap());
         sealer.send(
             &mut stream,
             &Message::Hello {
                 device: self.device.clone(),
                 name: self.name.clone(),
+                devices,
             },
         )?;
         // Nothing is shared until the peer proves it holds the group key.
-        let Message::Hello { device, name } = opener.recv(&mut stream)? else {
+        let Message::Hello {
+            device,
+            name,
+            devices: reported,
+        } = opener.recv(&mut stream)?
+        else {
             bail!("peer skipped its hello");
         };
         if device == self.device {
@@ -431,12 +548,17 @@ impl Hub {
                     device: device.clone(),
                     name: name.clone(),
                     sender,
+                    reported: Vec::new(),
                 },
             );
             connection
         };
         eprintln!("connected to {name}");
         self.devices.lock().unwrap().saw(&device, &name);
+        self.reported(connection, reported);
+        // Includes the new peer: its hello was built before it was added
+        // here, so a change in between would otherwise never reach it.
+        self.announce(None);
 
         let writer_stream = stream.try_clone()?;
         let writer = thread::spawn(move || write_loop(writer_stream, sealer, receiver));
@@ -454,6 +576,7 @@ impl Hub {
 
         self.state.lock().unwrap().peers.remove(&connection);
         self.devices.lock().unwrap().saw(&device, &name);
+        self.announce(None);
         let _ = stream.shutdown(Shutdown::Both);
         let _ = writer.join();
         eprintln!("disconnected from {name}");
@@ -478,6 +601,7 @@ impl Hub {
                         let _ = peer.sender.send(clip.clone());
                     }
                 }
+                Message::Devices { devices } => self.reported(connection, devices),
                 Message::Ping | Message::Unknown => {}
                 Message::Hello { .. } => bail!("unexpected hello"),
             }

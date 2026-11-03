@@ -36,14 +36,17 @@ The nonce is 4 zero bytes followed by a big-endian `u64` frame counter, which st
 The plaintext of each frame is one JSON object:
 
 ```json
-{"t":"hello","device":"<id>","name":"<display name>"}
+{"t":"hello","device":"<id>","name":"<display name>","devices":[<presence>, ...]}
 {"t":"clip","id":"<random hex>","text":"<up to 1 MiB>"}
 {"t":"image","id":"<random hex>","png":"<base64 PNG, up to 16 MiB>"}
 {"t":"latest"}
+{"t":"devices","devices":[<presence>, ...]}
 {"t":"ping"}
 ```
 
-Devices skip message types they don't recognize, so newer versions can add types without breaking older ones.
+A presence is `{"device":"<id>","name":"<display name>","connected":true,"last_seen":<unix seconds>}`: a device the sender knows about, whether the sender is connected to it now, and when it last was.
+
+Devices skip message types and fields they don't recognize, so newer versions can add them without breaking older ones.
 
 Each side's first frame is `hello`. Nothing else is sent until the peer's `hello` authenticates, which proves it holds the key.
 
@@ -54,6 +57,7 @@ Each side's first frame is `hello`. Nothing else is sent until the peer's `hello
 - The most recent clip to arrive wins. Device clocks aren't used, so a wrong clock can't block a device.
 - Nothing is sent on startup or connect, only after a new copy.
 - `latest` asks for the most recent clip, which is sent back to the asker only, with its original ID. The iPhone app sends this when opened. If nothing has been copied yet, there's no reply.
+- Computers send their known devices in `hello`, and send `devices` to every connection whenever one of their own connections starts or ends. A device counts as online if it's connected directly, or if a directly connected computer reports it as connected. Only direct reports count, so peers can't keep a departed device online by repeating each other. The iPhone sends no list.
 - Pings go out after 15 seconds of silence, and a connection is dropped after 45 seconds without a frame.
 
 ## Relay

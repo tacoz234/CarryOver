@@ -43,6 +43,9 @@ pub enum Request {
     AddPeer { address: String },
     RemovePeer { address: String },
     Forget { device: String },
+    CopyClip { id: String },
+    DeleteClip { id: String },
+    ClearHistory,
     OpenLog,
     CheckUpdate,
     InstallUpdate,
@@ -144,6 +147,9 @@ impl App {
                 }
             }
             Request::Forget { device } => self.hub.forget(&device),
+            Request::CopyClip { id } => self.hub.copy_again(&id)?,
+            Request::DeleteClip { id } => self.hub.history.lock().unwrap().remove(&id),
+            Request::ClearHistory => self.hub.history.lock().unwrap().clear(),
             Request::OpenLog => open(&self.log)?,
             Request::CheckUpdate => self.updater.check_now(),
             Request::InstallUpdate => self.updater.install_now(),
@@ -151,7 +157,13 @@ impl App {
         Ok(())
     }
 
-    /// Everything the window shows, except the invite.
+    /// The clip history for the window. Sent only when it changes, since
+    /// thumbnails make it large.
+    pub fn history(&self) -> Value {
+        self.hub.history.lock().unwrap().to_json()
+    }
+
+    /// Everything the window shows, except the invite and the history.
     pub fn snapshot(&self) -> Value {
         let status = self.hub.status();
         let config = self.config.lock().unwrap();
@@ -160,19 +172,15 @@ impl App {
             .devices
             .iter()
             .map(|device| {
-                let seen = if device.connected {
-                    "Connected".to_owned()
-                } else {
-                    format!(
-                        "Last seen {}",
-                        ago(Duration::from_secs(now.saturating_sub(device.last_seen)))
-                    )
-                };
+                // Zero means it was only heard of, never seen connected.
+                let ago_text = (device.last_seen > 0)
+                    .then(|| ago(Duration::from_secs(now.saturating_sub(device.last_seen))));
                 json!({
                     "id": device.id,
                     "name": device.name,
                     "connected": device.connected,
-                    "seen": seen,
+                    "via": device.via,
+                    "ago": ago_text,
                 })
             })
             .collect();
@@ -200,6 +208,7 @@ impl App {
                 format!("{} · {}", activity.description, ago(activity.at.elapsed()))
             }),
             "update": update,
+            "historyVersion": self.hub.history.lock().unwrap().version,
         })
     }
 }

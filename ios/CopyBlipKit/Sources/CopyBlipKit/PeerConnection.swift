@@ -17,6 +17,8 @@ public final class PeerConnection: @unchecked Sendable {
     private var sealer: Sealer?
     private var opener: Opener?
     public private(set) var peerName = ""
+    /// The devices the computer last said it knows about.
+    public private(set) var reported: [Presence] = []
     /// The resolved address once connected, for dialing directly next time.
     public private(set) var address: Address?
 
@@ -47,10 +49,11 @@ public final class PeerConnection: @unchecked Sendable {
             (sealer, opener) = try Handshake.keys(group: group, ourNonce: nonce, peerHello: peerHello, role: .initiator)
             try await send(.hello(device: device, name: name))
             // Nothing is shared until the peer proves it holds the group key.
-            guard case let .hello(_, peerName) = try await receive() else {
+            guard case let .hello(_, peerName, devices) = try await receive() else {
                 throw ProtocolError.unexpectedMessage
             }
             self.peerName = peerName
+            reported = devices
             // A relayed connection's remote end is the relay, not the computer.
             if !relayed, case let .hostPort(host, port)? = connection.currentPath?.remoteEndpoint {
                 // Drops the interface suffix, e.g. "%en0", which is only valid on this connection.
@@ -67,14 +70,19 @@ public final class PeerConnection: @unchecked Sendable {
         try await write(frame)
     }
 
-    /// Next message other than a keepalive ping.
+    /// Next message other than a keepalive ping. Device lists are kept in
+    /// `reported` rather than returned.
     public func receive() async throws -> Message {
         while true {
             guard var opener else { throw ConnectionError.closed }
             let length = try Opener.frameLength(header: try await read(exactly: 4))
             let message = try opener.open(try await read(exactly: length))
             self.opener = opener
-            if message != .ping, message != .unknown { return message }
+            switch message {
+            case .ping, .unknown: continue
+            case let .devices(devices): reported = devices
+            default: return message
+            }
         }
     }
 

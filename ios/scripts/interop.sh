@@ -17,7 +17,7 @@ relay=${COPYBLIP_TEST_RELAY:+--relay $COPYBLIP_TEST_RELAY}
 "$agent" --config-dir "$dir/a" run --port 0 $relay --pasteboard copyblip.interop.a 2>"$dir/a.log" & a=$!
 "$agent" --config-dir "$dir/b" run --port 0 $relay --pasteboard copyblip.interop.b 2>"$dir/b.log" & b=$!
 
-port() { sed -n 's/^syncing on port //p' "$1"; }
+port() { sed -n 's/.*syncing on port //p' "$1"; }
 # Waits for the agents to connect to each other, not just to the relay.
 peered() { grep '^connected to ' "$1" | grep -qv 'connected to relay'; }
 for _ in $(seq 50); do

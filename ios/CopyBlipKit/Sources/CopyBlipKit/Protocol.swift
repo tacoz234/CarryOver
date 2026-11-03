@@ -2,11 +2,53 @@
 import CryptoKit
 import Foundation
 
+/// A device a computer knows about, for showing who's online.
+public struct Presence: Codable, Equatable, Sendable {
+    public let device: String
+    public let name: String
+    /// Whether the computer that sent this is connected to it right now.
+    public let connected: Bool
+    /// When that computer last saw it connected.
+    public let lastSeen: Date
+
+    public init(device: String, name: String, connected: Bool, lastSeen: Date) {
+        self.device = device
+        self.name = name
+        self.connected = connected
+        self.lastSeen = lastSeen
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case device, name, connected
+        case lastSeen = "last_seen"
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        device = try c.decode(String.self, forKey: .device)
+        name = try c.decode(String.self, forKey: .name)
+        connected = try c.decode(Bool.self, forKey: .connected)
+        // Seconds since 1970, as computers send it.
+        lastSeen = Date(timeIntervalSince1970: try c.decode(Double.self, forKey: .lastSeen))
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(device, forKey: .device)
+        try c.encode(name, forKey: .name)
+        try c.encode(connected, forKey: .connected)
+        try c.encode(UInt64(max(0, lastSeen.timeIntervalSince1970)), forKey: .lastSeen)
+    }
+}
+
 public enum Message: Equatable, Sendable {
-    case hello(device: String, name: String)
+    /// Computers list the devices they know about. The phone sends none.
+    case hello(device: String, name: String, devices: [Presence] = [])
     case clip(id: String, text: String)
     case image(id: String, png: Data)
     case latest
+    /// A computer's devices changed while connected.
+    case devices([Presence])
     case ping
     /// A message type from a newer version, skipped rather than ending the connection.
     case unknown
@@ -34,19 +76,25 @@ public enum Content: Equatable, Sendable {
 }
 
 extension Message: Codable {
-    private enum Keys: String, CodingKey { case t, device, name, id, text, png }
+    private enum Keys: String, CodingKey { case t, device, name, id, text, png, devices }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: Keys.self)
         switch try c.decode(String.self, forKey: .t) {
         case "hello":
-            self = .hello(device: try c.decode(String.self, forKey: .device), name: try c.decode(String.self, forKey: .name))
+            self = .hello(
+                device: try c.decode(String.self, forKey: .device),
+                name: try c.decode(String.self, forKey: .name),
+                // Older computers leave it out.
+                devices: try c.decodeIfPresent([Presence].self, forKey: .devices) ?? []
+            )
         case "clip":
             self = .clip(id: try c.decode(String.self, forKey: .id), text: try c.decode(String.self, forKey: .text))
         case "image":
             // JSONDecoder reads Data as base64, matching the desktop.
             self = .image(id: try c.decode(String.self, forKey: .id), png: try c.decode(Data.self, forKey: .png))
         case "latest": self = .latest
+        case "devices": self = .devices(try c.decode([Presence].self, forKey: .devices))
         case "ping": self = .ping
         default: self = .unknown
         }
@@ -55,10 +103,11 @@ extension Message: Codable {
     public func encode(to encoder: Encoder) throws {
         var c = encoder.container(keyedBy: Keys.self)
         switch self {
-        case let .hello(device, name):
+        case let .hello(device, name, devices):
             try c.encode("hello", forKey: .t)
             try c.encode(device, forKey: .device)
             try c.encode(name, forKey: .name)
+            if !devices.isEmpty { try c.encode(devices, forKey: .devices) }
         case let .clip(id, text):
             try c.encode("clip", forKey: .t)
             try c.encode(id, forKey: .id)
@@ -68,6 +117,9 @@ extension Message: Codable {
             try c.encode(id, forKey: .id)
             try c.encode(png, forKey: .png)
         case .latest: try c.encode("latest", forKey: .t)
+        case let .devices(devices):
+            try c.encode("devices", forKey: .t)
+            try c.encode(devices, forKey: .devices)
         case .ping: try c.encode("ping", forKey: .t)
         case .unknown: throw EncodingError.invalidValue(self, .init(codingPath: [], debugDescription: "unknown messages can't be sent"))
         }

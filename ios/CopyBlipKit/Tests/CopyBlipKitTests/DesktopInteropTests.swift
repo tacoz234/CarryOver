@@ -35,12 +35,19 @@ struct DesktopInteropTests {
         #expect(Set(addresses.map(\.port)) == Set(setup.ports))
     }
 
+    @Test func reachingOneDesktopShowsTheOtherOnline() async throws {
+        // Both agents share a host name, so they're told apart by device ID.
+        let (_, _, seen) = try await setup.client(ports: [setup.ports[0]]).latest()
+        #expect(seen.reached.count == 1)
+        #expect(seen.devices.contains { $0.connected && $0.device != "test-phone" })
+    }
+
     @Test func latestReturnsWhatWasJustSent() async throws {
         let text = "round trip ✅ \(UUID())"
         let (sent, _) = try await setup.client(ports: [setup.ports[0]]).send(.text(text))
         try await Task.sleep(for: .milliseconds(300))
         // Asks the other desktop, so the clip had to cross between agents.
-        let (received, _) = try await setup.client(ports: [setup.ports.last!]).latest()
+        let (received, _, _) = try await setup.client(ports: [setup.ports.last!]).latest()
         #expect(received?.content == .text(text))
         #expect(received?.id == sent.id)
     }
@@ -76,7 +83,7 @@ struct DesktopInteropTests {
         let png = Data("\u{89}PNG pretend \(UUID())".utf8) + Data((0..<300_000).map { UInt8($0 % 251) })
         let (sent, _) = try await setup.client(ports: [setup.ports[0]]).send(.image(png))
         try await Task.sleep(for: .milliseconds(500))
-        let (received, _) = try await setup.client(ports: [setup.ports.last!]).latest()
+        let (received, _, _) = try await setup.client(ports: [setup.ports.last!]).latest()
         #expect(received?.content == .image(png))
         #expect(received?.id == sent.id)
     }
@@ -108,7 +115,7 @@ struct RelayInteropTests {
         let png = Data((0..<700_000).map { UInt8($0 % 253) })
         let (sent, _) = try await relayOnly().send(.image(png))
         try await Task.sleep(for: .milliseconds(500))
-        let (received, _) = try await relayOnly().latest()
+        let (received, _, _) = try await relayOnly().latest()
         #expect(received?.id == sent.id)
         #expect(received?.content == .image(png))
     }

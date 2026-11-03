@@ -95,6 +95,9 @@ pub fn run(app: Arc<App>, open_window: bool) -> ! {
                                 Some("Relay turned off.")
                             }
                             Request::Relay { .. } => Some("Relay saved."),
+                            Request::CopyClip { .. } => {
+                                Some("Copied to this computer's clipboard.")
+                            }
                             _ => None,
                         };
                         let result = app.handle(request);

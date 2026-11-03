@@ -73,6 +73,9 @@ enum Command {
         /// Show an icon in the menu bar (macOS) or notification area (Windows)
         #[arg(long)]
         tray: bool,
+        /// What other devices call this one. Defaults to the host name
+        #[arg(long)]
+        name: Option<String>,
         /// Open the main window at start, with --tray
         #[arg(long, requires = "tray")]
         window: bool,
@@ -308,6 +311,7 @@ fn main() -> Result<()> {
             pasteboard,
             background,
             tray,
+            name,
             window,
         } => {
             if background {
@@ -321,7 +325,12 @@ fn main() -> Result<()> {
             }
             let listener = bind(port)?;
             let port = listener.local_addr()?.port();
-            let hub = Hub::new(key, config.device.clone(), device_name(), clipboard);
+            let hub = Hub::new(
+                key,
+                config.device.clone(),
+                name.unwrap_or_else(device_name),
+                clipboard,
+            );
             hub.serve(listener);
             for peer in peers {
                 hub.dial(Arc::new(Mutex::new(vec![config::normalize_peer(&peer)?])));
@@ -343,6 +352,7 @@ fn main() -> Result<()> {
                 #[cfg(windows)]
                 let log = dir.join("copyblip.log");
                 hub.remember_devices(dir.join("devices.json"));
+                hub.keep_history(dir.join("history"));
                 let app = copyblip::app::App::start(hub, dir, config, relay_url, log)?;
                 copyblip::tray::run(app, window);
             }

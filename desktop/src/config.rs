@@ -240,7 +240,10 @@ mod tests {
             ([7; 32], Some("wss://relay.example.dev"))
         );
         assert_eq!(parse_invite(&hex::encode([7u8; 32])).unwrap().0, [7; 32]);
-        assert_eq!(parse_invite(&format!("\u{feff}{link}\r\n")).unwrap().0, [7; 32]);
+        assert_eq!(
+            parse_invite(&format!("\u{feff}{link}\r\n")).unwrap().0,
+            [7; 32]
+        );
         assert!(parse_invite("copyblip://join?relay=https://x.dev").is_err());
         assert!(parse_invite("copyblip://join?code=abc").is_err());
     }

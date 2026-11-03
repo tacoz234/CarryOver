@@ -85,6 +85,7 @@
   }
   .avatar svg { width: 20px; height: 20px; }
   .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--green); flex: none; }
+  .dot.off { background: var(--muted); opacity: 0.45; }
   /* Classes that set display would otherwise show hidden elements. */
   [hidden] { display: none !important; }
   .banner { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; margin: 14px 0; display: flex; gap: 12px; align-items: center; }
@@ -119,6 +120,17 @@
   ol li { margin-bottom: 4px; }
   code { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12px; background: var(--hover); padding: 1px 5px; border-radius: 5px; }
   .empty { padding: 18px 14px; color: var(--muted); }
+  .heading { display: flex; align-items: baseline; justify-content: space-between; }
+  .clips { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px; }
+  .clip { all: unset; position: relative; display: flex; flex-direction: column; background: var(--card); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; cursor: pointer; }
+  .clip:hover { border-color: var(--accent); }
+  .clip .body { height: 110px; overflow: hidden; display: grid; place-items: center; background: var(--bg); }
+  .clip .body img { max-width: 100%; max-height: 110px; object-fit: contain; }
+  .clip .body .text { place-self: start; padding: 10px 12px; font-size: 12px; white-space: pre-wrap; word-break: break-word; display: -webkit-box; -webkit-line-clamp: 6; -webkit-box-orient: vertical; overflow: hidden; }
+  .clip .meta { padding: 8px 12px; font-size: 12px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .clip .delete { position: absolute; top: 6px; right: 6px; width: 22px; height: 22px; border-radius: 50%; border: none; background: var(--card); color: var(--muted); font-size: 14px; line-height: 22px; cursor: pointer; visibility: hidden; box-shadow: 0 1px 3px rgba(0,0,0,.25); }
+  .clip:hover .delete { visibility: visible; }
+  .clip .delete:hover { color: var(--danger); }
   #toast {
     position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%) translateY(80px);
     background: var(--text); color: var(--bg); padding: 9px 16px; border-radius: 10px;
@@ -133,6 +145,10 @@
   <button data-tab="devices" class="active">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="14" height="10" rx="1.5"/><path d="M6 18h6M9 14v4"/><rect x="17" y="8" width="5" height="11" rx="1"/></svg>
     Devices
+  </button>
+  <button data-tab="recent">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
+    Recent
   </button>
   <button data-tab="add">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v8M8 12h8"/></svg>
@@ -158,6 +174,15 @@
       <button class="btn primary" id="update-banner-install">Install</button>
     </div>
     <div class="card" id="device-list"></div>
+  </section>
+
+  <section id="recent">
+    <div class="heading">
+      <h2>Recent</h2>
+      <button class="link" id="clear-history" hidden>Clear All</button>
+    </div>
+    <p class="muted">The last 20 things sent or received. Click one to copy it again. It won't be sent to your other devices again.</p>
+    <div class="clips" id="clips"></div>
   </section>
 
   <section id="add">
@@ -269,29 +294,48 @@
     return node;
   }
 
-  function deviceRow(name, sub, connected, icon) {
+  // dot is "on", "off", or null for none.
+  function deviceRow(name, sub, dot, icon) {
     const avatar = el("div", { className: "avatar", innerHTML: icon });
     const text = el("div", { className: "grow" }, [
       el("div", { className: "name", textContent: name }),
       el("div", { className: "sub", textContent: sub }),
     ]);
     const row = el("div", { className: "row" }, [avatar, text]);
-    if (connected) row.append(el("span", { className: "dot", title: "Connected" }));
+    if (dot) {
+      row.append(el("span", { className: dot === "on" ? "dot" : "dot off", title: dot === "on" ? "Online" : "Offline" }));
+    }
     return row;
+  }
+
+  // Phones can't stay connected in the background, so they're never shown
+  // as offline: they sync whenever CopyBlip is opened on them.
+  function describe(device) {
+    const phone = isPhone(device.name);
+    if (device.connected) {
+      const sub = phone ? "Syncing now" : device.via ? `Online through ${device.via}` : "Online";
+      return { sub, dot: "on" };
+    }
+    if (phone) {
+      return { sub: device.ago ? `Syncs when you open CopyBlip · last synced ${device.ago}` : "Syncs when you open CopyBlip", dot: null };
+    }
+    return { sub: device.ago ? `Offline · last seen ${device.ago}` : "Offline", dot: "off" };
   }
 
   function renderDevices() {
     const list = $("device-list");
-    list.replaceChildren(deviceRow(state.name, "This computer", false, icons.computer));
+    list.replaceChildren(deviceRow(state.name, "This computer", null, icons.computer));
     for (const device of state.devices) {
-      const row = deviceRow(device.name, device.seen, device.connected, isPhone(device.name) ? icons.phone : icons.computer);
+      const { sub, dot } = describe(device);
+      const row = deviceRow(device.name, sub, dot, isPhone(device.name) ? icons.phone : icons.computer);
       if (!device.connected) {
-        row.append(el("button", {
+        // Before the dot, so dots line up whether or not a row has Remove.
+        row.insertBefore(el("button", {
           className: "remove",
           textContent: "Remove",
           title: "Remove from this list. It comes back if the device connects again.",
           onclick: () => send("forget", { device: device.id }),
-        }));
+        }), row.querySelector(".dot"));
       }
       list.append(row);
     }
@@ -368,6 +412,52 @@
     renderUpdate();
   };
 
+  let history = [];
+  function ago(seconds) {
+    const elapsed = Math.max(0, Date.now() / 1000 - seconds);
+    if (elapsed < 60) return "just now";
+    if (elapsed < 3600) return `${Math.floor(elapsed / 60)} min ago`;
+    if (elapsed < 86400) return `${Math.floor(elapsed / 3600)} hr ago`;
+    const days = Math.floor(elapsed / 86400);
+    return days === 1 ? "yesterday" : `${days} days ago`;
+  }
+
+  function renderHistory() {
+    const list = $("clips");
+    $("clear-history").hidden = history.length === 0;
+    if (history.length === 0) {
+      list.replaceChildren(el("div", { className: "muted", textContent: "Nothing yet. Copy something on any of your devices." }));
+      return;
+    }
+    list.replaceChildren(...history.map((item) => {
+      const body = el("div", { className: "body" });
+      if (item.thumbnail) {
+        body.append(el("img", { src: item.thumbnail, alt: "Image" }));
+      } else if (item.text !== null) {
+        body.append(el("div", { className: "text", textContent: item.long ? item.text + "…" : item.text }));
+      } else {
+        body.append(el("div", { className: "muted", textContent: "Image" }));
+      }
+      const who = item.direction === "sent" ? "Sent" : `From ${item.from || "another device"}`;
+      const card = el("button", { className: "clip", title: "Copy", onclick: () => send("copyClip", { id: item.id }) }, [
+        body,
+        el("div", { className: "meta", textContent: `${who} · ${ago(item.at)}` }),
+      ]);
+      card.append(el("button", {
+        className: "delete", textContent: "×", title: "Remove",
+        onclick: (event) => { event.stopPropagation(); send("deleteClip", { id: item.id }); },
+      }));
+      return card;
+    }));
+  }
+
+  window.setHistory = (items) => {
+    history = items;
+    renderHistory();
+  };
+  // Keeps "2 min ago" current without redrawing on every update.
+  setInterval(renderHistory, 30000);
+
   window.setInvite = (svg, link) => {
     invite = { svg, link };
     $("qr-code").innerHTML = svg;
@@ -416,6 +506,21 @@
   $("update-action").onclick = () => send(state.update.state === "available" ? "installUpdate" : "checkUpdate");
   $("update-banner-install").onclick = () => send("installUpdate");
   $("open-log").onclick = () => send("openLog");
+  // A second click confirms, since web view dialogs don't show everywhere.
+  let clearTimer;
+  $("clear-history").onclick = () => {
+    const button = $("clear-history");
+    if (button.dataset.armed) {
+      clearTimeout(clearTimer);
+      delete button.dataset.armed;
+      button.textContent = "Clear All";
+      send("clearHistory");
+      return;
+    }
+    button.dataset.armed = "1";
+    button.textContent = "Click again to clear";
+    clearTimer = setTimeout(() => { delete button.dataset.armed; button.textContent = "Clear All"; }, 3000);
+  };
   $("relay").oninput = (event) => { event.target.dataset.dirty = "1"; };
   $("relay-form").onsubmit = (event) => {
     event.preventDefault();

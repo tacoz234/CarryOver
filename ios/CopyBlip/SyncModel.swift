@@ -51,12 +51,16 @@ final class SyncModel {
         didSet { defaults.set(try? JSONEncoder().encode(devices), forKey: "devices") }
     }
 
+    /// Devices that answered the last sync, or are connected to a computer
+    /// that did. Nil until a sync has finished, since it isn't known yet.
+    private(set) var online: Set<String>?
+
     /// Newest first, up to `historyLimit`.
     private(set) var history: [HistoryItem] = [] {
         didSet { try? JSONEncoder().encode(history).write(to: Self.historyIndex, options: .atomic) }
     }
 
-    private static let historyLimit = 24
+    private static let historyLimit = 20
     private static let historyFolder: URL = {
         let folder = URL.applicationSupportDirectory.appending(path: "History", directoryHint: .isDirectory)
         try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
@@ -256,7 +260,9 @@ final class SyncModel {
     func thumbnail(for item: HistoryItem) -> UIImage? {
         guard item.text == nil else { return nil }
         if let cached = thumbnails[item.id] { return cached }
-        guard let image = UIImage(contentsOfFile: Self.imageFile(item.id).path()) else { return nil }
+        // Loaded through Data: `path()` percent-encodes the space in
+        // "Application Support", so the file would never be found.
+        guard let png = try? Data(contentsOf: Self.imageFile(item.id)), let image = UIImage(data: png) else { return nil }
         let scale = min(1, 600 / max(image.size.width, image.size.height, 1))
         let size = CGSize(width: image.size.width * scale, height: image.size.height * scale)
         let thumbnail = image.preparingThumbnail(of: size) ?? image
@@ -336,6 +342,7 @@ final class SyncModel {
         run("Sending…") {
             let (sent, addresses) = try await client.send(content)
             self.addresses = addresses
+            self.saw(sent.seen)
             self.lastClipID = sent.id
             self.record(.sent, content, id: sent.id, peers: sent.to)
             return .sent(Self.preview(content), to: sent.to)
@@ -380,8 +387,9 @@ final class SyncModel {
     func fetch() {
         guard let client else { return }
         run("Checking your devices…") {
-            let (latest, addresses) = try await client.latest()
+            let (latest, addresses, seen) = try await client.latest()
             self.addresses = addresses
+            self.saw(seen)
             guard let received = latest, received.id != self.lastClipID else {
                 return .upToDate
             }
@@ -405,6 +413,29 @@ final class SyncModel {
         }
     }
 
+    /// Updates who's online, and adds devices the computers know about that
+    /// this iPhone hasn't synced with yet.
+    private func saw(_ seen: Seen) {
+        let others = seen.devices.filter { $0.device != device }
+        online = Set(seen.reached + others.filter(\.connected).map(\.name))
+        let now = Date()
+        var merged = devices
+        for name in seen.reached {
+            merged.removeAll { $0.name == name }
+            merged.append(Device(name: name, lastSeen: now))
+        }
+        for report in others {
+            let lastSeen = report.connected ? now : report.lastSeen
+            if let index = merged.firstIndex(where: { $0.name == report.name }) {
+                merged[index].lastSeen = max(merged[index].lastSeen, lastSeen)
+            } else {
+                merged.append(Device(name: report.name, lastSeen: lastSeen))
+            }
+        }
+        merged.sort { $0.lastSeen > $1.lastSeen }
+        if merged != devices { devices = merged }
+    }
+
     private func run(_ message: String, _ work: @escaping @MainActor () async throws -> Status) {
         status = .working(message)
         // Gives the transfer time to finish if the user leaves the app right away.
@@ -414,10 +445,14 @@ final class SyncModel {
                 status = try await work()
                 log.info("sync finished: \(String(describing: self.status), privacy: .private)")
             } catch SyncError.noDevices {
+                // Nothing answered, so nothing is known to be online.
+                online = []
                 status = .failed("No devices found. Make sure CopyBlip is running on your computer and you're on the same Wi-Fi.")
             } catch SyncError.unreachable {
+                online = []
                 status = .failed("Couldn't connect to your computer. Make sure CopyBlip is running on it.")
             } catch SyncError.wrongCode {
+                online = []
                 status = .failed("Your computer rejected this phone. Leave the group and join again with the current pairing code.")
             } catch SyncError.tooLarge {
                 status = .failed("That's too big to share. The limits are 1 MB of text or a 16 MB image.")

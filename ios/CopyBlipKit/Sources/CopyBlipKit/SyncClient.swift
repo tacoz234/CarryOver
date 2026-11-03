@@ -10,6 +10,39 @@ public struct Received: Equatable, Sendable {
 public struct Sent: Equatable, Sendable {
     public let id: String
     public let to: [String]
+    public let seen: Seen
+}
+
+/// Who answered a sync, and what they said about the rest of the group.
+public struct Seen: Equatable, Sendable {
+    /// Names of the computers this iPhone reached.
+    public let reached: [String]
+    /// The devices those computers know about, one entry each. Connected if
+    /// any of them is connected to it.
+    public let devices: [Presence]
+
+    init(reached: [String], reports: [[Presence]]) {
+        self.reached = reached
+        var merged: [String: Presence] = [:]
+        for report in reports.joined() {
+            guard let existing = merged[report.device] else {
+                merged[report.device] = report
+                continue
+            }
+            merged[report.device] = Presence(
+                device: report.device,
+                name: report.lastSeen > existing.lastSeen ? report.name : existing.name,
+                connected: existing.connected || report.connected,
+                lastSeen: max(existing.lastSeen, report.lastSeen)
+            )
+        }
+        devices = merged.values.sorted { $0.name < $1.name }
+    }
+
+    /// Whether `name` answered, or is connected to a computer that did.
+    public func isOnline(_ name: String) -> Bool {
+        reached.contains(name) || devices.contains { $0.name == name && $0.connected }
+    }
 }
 
 /// A device address that worked, so the next sync can skip discovery.
@@ -69,12 +102,13 @@ public struct SyncClient: Sendable {
             await peer.finish()
             return true
         }
-        return (Sent(id: id, to: reached.map(\.name)), reached.compactMap(\.address))
+        let seen = Seen(reached: reached.map(\.name), reports: reached.map(\.reported))
+        return (Sent(id: id, to: reached.map(\.name), seen: seen), reached.compactMap(\.address))
     }
 
     /// The most recent clip any device has, or nil if none has copied anything
-    /// yet. Also returns the addresses that worked.
-    public func latest(wait: Duration = .seconds(2)) async throws -> (Received?, [Address]) {
+    /// yet. Also returns the addresses that worked, and who's online.
+    public func latest(wait: Duration = .seconds(2)) async throws -> (Received?, [Address], Seen) {
         let reached = try await reach(stopWhen: { $0 != nil }) { peer -> Received? in
             try await peer.send(.latest)
             // No reply means the device hasn't seen a copy yet.
@@ -85,13 +119,15 @@ public struct SyncClient: Sendable {
             }
         }
         // Devices in a group hold the same latest clip, so the first answer will do.
-        return (reached.lazy.compactMap(\.value).first, reached.compactMap(\.address))
+        let seen = Seen(reached: reached.map(\.name), reports: reached.map(\.reported))
+        return (reached.lazy.compactMap(\.value).first, reached.compactMap(\.address), seen)
     }
 
     struct Reached<T: Sendable>: Sendable {
         let value: T
         let name: String
         let address: Address?
+        let reported: [Presence]
     }
 
     enum Target: Sendable {
@@ -193,7 +229,7 @@ public struct SyncClient: Sendable {
                     do {
                         try await peer.open(group: group, device: device, name: name, timeout: timeout)
                         let value = try await body(peer)
-                        return .success(Reached(value: value, name: peer.peerName, address: peer.address))
+                        return .success(Reached(value: value, name: peer.peerName, address: peer.address, reported: peer.reported))
                     } catch {
                         return .failure(error)
                     }

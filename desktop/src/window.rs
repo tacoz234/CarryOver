@@ -75,6 +75,11 @@ impl Window {
     /// Sends a fresh snapshot, if anything changed since the last one.
     pub fn refresh(&mut self, app: &App) {
         let snapshot = app.snapshot();
+        let history_changed = self.shown.as_ref().map(|shown| &shown["historyVersion"])
+            != Some(&snapshot["historyVersion"]);
+        if history_changed {
+            self.call("setHistory", &[app.history()]);
+        }
         if self.shown.as_ref() != Some(&snapshot) {
             self.call("render", std::slice::from_ref(&snapshot));
             self.shown = Some(snapshot);

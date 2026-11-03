@@ -104,3 +104,25 @@ private func body(_ frame: Data) throws -> Data {
     #expect(Invite("copyblip://join?code=\(group.pairingCode)&relay=nonsense") == nil)
     #expect(Invite("https://example.com/join?code=\(group.pairingCode)") == nil)
 }
+
+@Test func hellosCarryPresenceAndOlderHellosStillDecode() throws {
+    let old = try JSONDecoder().decode(Message.self, from: Data(#"{"t":"hello","device":"a","name":"Mac"}"#.utf8))
+    #expect(old == .hello(device: "a", name: "Mac"))
+    // As desktop/src/protocol.rs writes it.
+    let json = #"{"t":"hello","device":"a","name":"Mac","devices":[{"device":"b","name":"PC","connected":true,"last_seen":5}]}"#
+    let hello = try JSONDecoder().decode(Message.self, from: Data(json.utf8))
+    let pc = Presence(device: "b", name: "PC", connected: true, lastSeen: Date(timeIntervalSince1970: 5))
+    #expect(hello == .hello(device: "a", name: "Mac", devices: [pc]))
+    let update = try JSONDecoder().decode(Message.self, from: Data(#"{"t":"devices","devices":[]}"#.utf8))
+    #expect(update == .devices([]))
+}
+
+@Test func seenMergesReportsFromSeveralComputers() {
+    let early = Date(timeIntervalSince1970: 10), late = Date(timeIntervalSince1970: 20)
+    let seen = Seen(reached: ["Mac"], reports: [
+        [Presence(device: "pc", name: "PC", connected: false, lastSeen: early)],
+        [Presence(device: "pc", name: "PC", connected: true, lastSeen: late)],
+    ])
+    #expect(seen.devices == [Presence(device: "pc", name: "PC", connected: true, lastSeen: late)])
+    #expect(seen.isOnline("Mac") && seen.isOnline("PC") && !seen.isOnline("iPad"))
+}

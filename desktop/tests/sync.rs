@@ -1,6 +1,6 @@
 use copyblip::clipboard::{Clipboard, Content, MemoryClipboard};
 use copyblip::hub::Hub;
-use copyblip::protocol::{Message, Role, handshake};
+use copyblip::protocol::{Message, Opener, Role, handshake};
 use std::net::{SocketAddr, TcpListener, TcpStream};
 use std::sync::{Arc, Mutex};
 use std::thread::sleep;
@@ -168,6 +168,7 @@ fn phone(
     let hello = Message::Hello {
         device: "phone".into(),
         name: "phone".into(),
+        devices: Vec::new(),
     };
     sealer.send(&mut stream, &hello).unwrap();
     assert!(matches!(
@@ -175,6 +176,76 @@ fn phone(
         Message::Hello { .. }
     ));
     (stream, sealer, opener)
+}
+
+/// The next message a phone would act on. Like the iPhone app, skips
+/// device lists, which computers send whenever their connections change.
+fn next(opener: &mut Opener, stream: &mut TcpStream) -> anyhow::Result<Message> {
+    loop {
+        match opener.recv(stream)? {
+            Message::Devices { .. } | Message::Ping => {}
+            message => return Ok(message),
+        }
+    }
+}
+
+fn device<'a>(
+    status: &'a copyblip::hub::Status,
+    name: &str,
+) -> Option<&'a copyblip::hub::DeviceStatus> {
+    status.devices.iter().find(|device| device.name == name)
+}
+
+#[test]
+fn devices_connected_through_a_peer_count_as_online() {
+    let (a, b, c) = (node("a", KEY), node("b", KEY), node("c", KEY));
+    connect(&a, &b);
+    connect(&b, &c);
+    wait_for("c through b", || {
+        device(&a.hub.status(), "c").is_some_and(|c| c.connected && c.via.as_deref() == Some("b"))
+    });
+    let status = a.hub.status();
+    let b_seen = device(&status, "b").unwrap();
+    assert!(b_seen.connected && b_seen.via.is_none());
+}
+
+#[test]
+fn a_phone_reaching_one_computer_shows_on_the_others() {
+    let (a, b) = (node("a", KEY), node("b", KEY));
+    connect(&a, &b);
+    wait_for("connection", || a.hub.peer_count() == 1);
+    let (stream, _, _) = phone(&b);
+    wait_for("phone through b", || {
+        device(&a.hub.status(), "phone").is_some_and(|phone| phone.connected)
+    });
+    drop(stream);
+    wait_for("phone gone", || {
+        device(&a.hub.status(), "phone")
+            .is_some_and(|phone| !phone.connected && phone.last_seen > 0)
+    });
+}
+
+#[test]
+fn the_hello_tells_a_phone_who_is_online() {
+    let (a, b) = (node("a", KEY), node("b", KEY));
+    connect(&a, &b);
+    wait_for("connection", || b.hub.peer_count() == 1);
+    let mut stream = TcpStream::connect(b.address).unwrap();
+    let (mut sealer, mut opener) = handshake(&mut stream, &KEY, Role::Initiator).unwrap();
+    let hello = Message::Hello {
+        device: "phone".into(),
+        name: "phone".into(),
+        devices: Vec::new(),
+    };
+    sealer.send(&mut stream, &hello).unwrap();
+    let Message::Hello { devices, .. } = opener.recv(&mut stream).unwrap() else {
+        panic!("expected a hello");
+    };
+    assert!(
+        devices
+            .iter()
+            .any(|device| device.name == "a" && device.connected)
+    );
 }
 
 #[test]
@@ -188,7 +259,7 @@ fn latest_returns_the_most_recent_clip_to_the_asker_only() {
     let (mut stream, mut sealer, mut opener) = phone(&b);
     wait_for("phone", || b.hub.peer_count() == 2);
     sealer.send(&mut stream, &Message::Latest).unwrap();
-    match opener.recv(&mut stream).unwrap() {
+    match next(&mut opener, &mut stream).unwrap() {
         Message::Clip { text, .. } => assert_eq!(text, "newest"),
         other => panic!("expected a clip, got {other:?}"),
     }
@@ -204,7 +275,7 @@ fn latest_with_nothing_copied_sends_nothing() {
     stream
         .set_read_timeout(Some(Duration::from_millis(500)))
         .unwrap();
-    assert!(opener.recv(&mut stream).is_err());
+    assert!(next(&mut opener, &mut stream).is_err());
 }
 
 #[test]
@@ -245,7 +316,7 @@ fn text_already_on_the_clipboard_is_not_rewritten_or_forwarded() {
 
     // It still counts as the latest clip, so the phone sees itself as up to date.
     sealer.send(&mut stream, &Message::Latest).unwrap();
-    assert_eq!(opener.recv(&mut stream).unwrap(), echo);
+    assert_eq!(next(&mut opener, &mut stream).unwrap(), echo);
 }
 
 #[test]
@@ -264,7 +335,7 @@ fn images_sync_and_are_returned_by_latest() {
     let (mut stream, mut sealer, mut opener) = phone(&b);
     sealer.send(&mut stream, &Message::Latest).unwrap();
     assert!(
-        matches!(opener.recv(&mut stream).unwrap(), Message::Image { png: got, .. } if got == png)
+        matches!(next(&mut opener, &mut stream).unwrap(), Message::Image { png: got, .. } if got == png)
     );
 }
 
@@ -284,4 +355,34 @@ fn unknown_message_types_keep_the_connection() {
         )
         .unwrap();
     wait_for_clip(&a, "still connected");
+}
+
+#[test]
+fn copying_from_history_does_not_send_it_again() {
+    let (a, b) = (node("a", KEY), node("b", KEY));
+    connect(&a, &b);
+    wait_for("connection", || b.hub.peer_count() == 1);
+    a.clipboard.copy("first");
+    wait_for_clip(&b, "first");
+    settle();
+    a.clipboard.copy("second");
+    wait_for_clip(&b, "second");
+    settle();
+
+    let history = b.hub.history.lock().unwrap().to_json();
+    let first = history
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|item| item["text"] == "first")
+        .unwrap()["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    assert_eq!(history[0]["direction"], "received");
+    b.hub.copy_again(&first).unwrap();
+    assert_eq!(b.clipboard.current().as_deref(), Some("first"));
+    settle();
+    // a still has "second": the old clip stayed on b.
+    assert_eq!(a.clipboard.current().as_deref(), Some("second"));
 }

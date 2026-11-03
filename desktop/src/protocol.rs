@@ -27,12 +27,26 @@ pub enum Role {
     Responder,
 }
 
+/// A device the sender knows about, for showing who's online.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Presence {
+    pub device: String,
+    pub name: String,
+    /// Whether the sender is connected to it right now.
+    pub connected: bool,
+    /// Seconds since the Unix epoch when the sender last saw it connected.
+    pub last_seen: u64,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "t", rename_all = "lowercase")]
 pub enum Message {
     Hello {
         device: String,
         name: String,
+        /// The devices the sender knows about. Older versions leave it out.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        devices: Vec<Presence>,
     },
     Clip {
         id: String,
@@ -45,6 +59,10 @@ pub enum Message {
     },
     /// Asks for the most recent clip. Phones send this when opened.
     Latest,
+    /// The sender's devices changed, such as one connecting or leaving.
+    Devices {
+        devices: Vec<Presence>,
+    },
     Ping,
     /// A message type from a newer version, which is skipped rather than
     /// ending the connection.
@@ -299,6 +317,31 @@ mod tests {
             serde_json::from_str::<Message>(future).unwrap(),
             Message::Unknown
         );
+    }
+
+    #[test]
+    fn hellos_carry_presence_and_older_hellos_still_parse() {
+        let old = r#"{"t":"hello","device":"a","name":"Mac"}"#;
+        let Message::Hello { devices, .. } = serde_json::from_str(old).unwrap() else {
+            panic!("not a hello");
+        };
+        assert!(devices.is_empty());
+        let hello = Message::Hello {
+            device: "a".into(),
+            name: "Mac".into(),
+            devices: vec![Presence {
+                device: "b".into(),
+                name: "PC".into(),
+                connected: true,
+                last_seen: 5,
+            }],
+        };
+        let json = serde_json::to_string(&hello).unwrap();
+        assert_eq!(
+            json,
+            r#"{"t":"hello","device":"a","name":"Mac","devices":[{"device":"b","name":"PC","connected":true,"last_seen":5}]}"#
+        );
+        assert_eq!(serde_json::from_str::<Message>(&json).unwrap(), hello);
     }
 
     #[test]

@@ -35,7 +35,8 @@ For a PC, `desktop/scripts/package-windows.ps1` (on a PC) or `package-windows.sh
 
 The menu bar and notification area icons show what's connected and what last synced. **Open CopyBlip…** in their menu opens the main window (on Windows, clicking the icon does too), which has:
 
-- **Devices:** every device that has connected, with a green dot for the ones connected now.
+- **Devices:** every device in the group, with a green dot for the ones online, including ones connected through another computer.
+- **Recent:** the last 20 clips sent or received, with image thumbnails. Click one to copy it again.
 - **Add a Device:** a QR code for the iPhone and an invite link for computers.
 - **Settings:** pause syncing, open at login, updates, the relay and Tailscale addresses, and the log.
 

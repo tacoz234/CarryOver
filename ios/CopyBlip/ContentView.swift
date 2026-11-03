@@ -81,6 +81,13 @@ private enum DeviceLook {
         return name.replacingOccurrences(of: "-", with: " ")
     }
 
+    /// Phones can't stay connected in the background, so they're never
+    /// shown as offline.
+    static func isPhone(_ name: String) -> Bool {
+        let name = name.lowercased()
+        return name.contains("iphone") || name.contains("ipad")
+    }
+
     static func symbol(_ name: String) -> String {
         let name = name.lowercased()
         if name.contains("iphone") { return "iphone" }
@@ -108,7 +115,7 @@ private struct SyncView: View {
 
                 LazyVGrid(columns: deviceColumns, spacing: 20) {
                     ForEach(model.devices) { device in
-                        DeviceTile(device: device, badge: badge(for: device.name))
+                        DeviceTile(device: device, badge: badge(for: device.name), online: online(device.name))
                     }
                     ActionTile(title: "Add a Device", symbol: "plus") { showingAddDevice = true }
                     ActionTile(title: "Get Latest", symbol: "arrow.down") { model.fetch() }
@@ -187,6 +194,12 @@ private struct SyncView: View {
         }
     }
 
+    /// Nil when unknown: before the first sync, and for phones.
+    private func online(_ name: String) -> Bool? {
+        guard let online = model.online, !DeviceLook.isPhone(name) else { return nil }
+        return online.contains(name)
+    }
+
     /// Marks the devices the last sync went to or came from.
     private func badge(for name: String) -> DeviceTile.Badge? {
         switch model.status {
@@ -202,11 +215,13 @@ private struct DeviceTile: View {
 
     let device: SyncModel.Device
     let badge: Badge?
+    let online: Bool?
 
     var body: some View {
         VStack(spacing: 8) {
             Circle()
                 .fill(Brand.gradient)
+                .opacity(online == false ? 0.45 : 1)
                 .overlay {
                     Image(systemName: DeviceLook.symbol(device.name))
                         .font(.system(size: 28, weight: .medium))
@@ -221,14 +236,25 @@ private struct DeviceTile: View {
                             .transition(.scale.combined(with: .opacity))
                     }
                 }
+                .overlay(alignment: .topTrailing) {
+                    if let online {
+                        Circle()
+                            .fill(online ? Color.green : Color.gray)
+                            .frame(width: 14, height: 14)
+                            .overlay(Circle().stroke(Color(.systemBackground), lineWidth: 2.5))
+                            .padding(3)
+                    }
+                }
                 .aspectRatio(1, contentMode: .fit)
                 .animation(.spring, value: badge)
+                .animation(.default, value: online)
             Text(DeviceLook.name(device.name))
                 .font(.footnote)
                 .multilineTextAlignment(.center)
                 .lineLimit(2)
         }
         .accessibilityElement(children: .combine)
+        .accessibilityValue(online.map { $0 ? "Online" : "Offline" } ?? "")
     }
 }
 

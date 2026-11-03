@@ -17,6 +17,13 @@ pub struct Config {
     /// Relay base URL, for devices on different networks.
     #[serde(default)]
     pub relay: Option<String>,
+    /// Install updates as soon as they're found.
+    #[serde(default = "yes")]
+    pub auto_update: bool,
+}
+
+fn yes() -> bool {
+    true
 }
 
 impl Config {
@@ -26,6 +33,7 @@ impl Config {
             group_key: hex::encode(key),
             peers: Vec::new(),
             relay: None,
+            auto_update: true,
         }
     }
 
@@ -240,5 +248,6 @@ mod tests {
         let old = r#"{"device":"ab","group_key":"00"}"#;
         let config: Config = serde_json::from_str(old).unwrap();
         assert!(config.peers.is_empty() && config.relay.is_none());
+        assert!(config.auto_update);
     }
 }

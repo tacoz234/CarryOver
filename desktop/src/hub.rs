@@ -2,13 +2,15 @@
 use crate::clipboard::{Clipboard, Content};
 use crate::protocol::{GroupKey, MAX_IMAGE, MAX_TEXT, Message, Opener, Role, Sealer, handshake};
 use anyhow::{Result, bail};
-use std::collections::{HashMap, HashSet, VecDeque};
+use serde::{Deserialize, Serialize};
+use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
 use std::net::{Shutdown, TcpListener, TcpStream, ToSocketAddrs};
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, RecvTimeoutError, Sender};
 use std::sync::{Arc, Mutex};
 use std::thread;
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 const POLL_INTERVAL: Duration = Duration::from_millis(250);
 const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(5);
@@ -85,12 +87,67 @@ pub struct Activity {
     pub at: Instant,
 }
 
-/// A snapshot for the tray menu.
+/// A snapshot for the tray menu and window.
 pub struct Status {
     /// Names of connected devices, without duplicates.
     pub connected: Vec<String>,
     pub paused: bool,
     pub last_activity: Option<Activity>,
+    /// Every device that has connected, newest first.
+    pub devices: Vec<DeviceStatus>,
+}
+
+pub struct DeviceStatus {
+    pub id: String,
+    pub name: String,
+    pub connected: bool,
+    /// Seconds since the Unix epoch when it was last connected.
+    pub last_seen: u64,
+}
+
+/// A device that has connected before, kept so the window can list devices
+/// that are away, like an iPhone between opens.
+#[derive(Clone, Serialize, Deserialize)]
+struct Known {
+    name: String,
+    last_seen: u64,
+}
+
+#[derive(Default)]
+struct Devices {
+    known: BTreeMap<String, Known>,
+    /// Where to save `known`. Unset in tests and plain `run`.
+    path: Option<PathBuf>,
+}
+
+impl Devices {
+    fn saw(&mut self, device: &str, name: &str) {
+        self.known.insert(
+            device.to_owned(),
+            Known {
+                name: name.to_owned(),
+                last_seen: unix_now(),
+            },
+        );
+        self.save();
+    }
+
+    fn save(&self) {
+        if let Some(path) = &self.path {
+            let result = serde_json::to_vec_pretty(&self.known)
+                .map_err(anyhow::Error::from)
+                .and_then(|json| Ok(std::fs::write(path, json)?));
+            if let Err(error) = result {
+                eprintln!("couldn't save the device list: {error:#}");
+            }
+        }
+    }
+}
+
+pub fn unix_now() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_or(0, |elapsed| elapsed.as_secs())
 }
 
 pub struct Hub {
@@ -100,6 +157,7 @@ pub struct Hub {
     clipboard: Arc<dyn Clipboard>,
     state: Mutex<State>,
     paused: AtomicBool,
+    devices: Mutex<Devices>,
 }
 
 impl Hub {
@@ -116,6 +174,7 @@ impl Hub {
             clipboard,
             state: Mutex::new(State::default()),
             paused: AtomicBool::new(false),
+            devices: Mutex::new(Devices::default()),
         })
     }
 
@@ -125,16 +184,63 @@ impl Hub {
         eprintln!("{}", if paused { "paused" } else { "resumed" });
     }
 
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    pub fn is_paused(&self) -> bool {
+        self.paused.load(Ordering::Relaxed)
+    }
+
+    /// Loads and keeps saving the list of devices seen, at `path`.
+    pub fn remember_devices(&self, path: PathBuf) {
+        let known = std::fs::read(&path)
+            .ok()
+            .and_then(|json| serde_json::from_slice(&json).ok())
+            .unwrap_or_default();
+        *self.devices.lock().unwrap() = Devices {
+            known,
+            path: Some(path),
+        };
+    }
+
+    /// Drops a device from the list. It reappears if it connects again.
+    pub fn forget(&self, device: &str) {
+        let mut devices = self.devices.lock().unwrap();
+        devices.known.remove(device);
+        devices.save();
+    }
+
     pub fn status(&self) -> Status {
         let state = self.state.lock().unwrap();
         let mut connected: Vec<String> =
             state.peers.values().map(|peer| peer.name.clone()).collect();
         connected.sort();
         connected.dedup();
+        let live: HashSet<&str> = state
+            .peers
+            .values()
+            .map(|peer| peer.device.as_str())
+            .collect();
+        let mut devices: Vec<DeviceStatus> = self
+            .devices
+            .lock()
+            .unwrap()
+            .known
+            .iter()
+            .map(|(id, known)| DeviceStatus {
+                id: id.clone(),
+                name: known.name.clone(),
+                connected: live.contains(id.as_str()),
+                last_seen: known.last_seen,
+            })
+            .collect();
+        devices.sort_by_key(|device| std::cmp::Reverse((device.connected, device.last_seen)));
         Status {
             connected,
             paused: self.paused.load(Ordering::Relaxed),
             last_activity: state.last_activity.clone(),
+            devices,
         }
     }
 
@@ -330,6 +436,7 @@ impl Hub {
             connection
         };
         eprintln!("connected to {name}");
+        self.devices.lock().unwrap().saw(&device, &name);
 
         let writer_stream = stream.try_clone()?;
         let writer = thread::spawn(move || write_loop(writer_stream, sealer, receiver));
@@ -346,6 +453,7 @@ impl Hub {
         };
 
         self.state.lock().unwrap().peers.remove(&connection);
+        self.devices.lock().unwrap().saw(&device, &name);
         let _ = stream.shutdown(Shutdown::Both);
         let _ = writer.join();
         eprintln!("disconnected from {name}");

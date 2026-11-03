@@ -13,7 +13,7 @@ Early. Text and images, run from a terminal on computers.
 | Part | State |
 | --- | --- |
 | Mac agent | Tested on macOS 27 with the real clipboard |
-| Windows agent | Compiles, but has never been run on Windows |
+| Windows agent | Runs on Windows 11; the window and updates aren't tested there yet |
 | iPhone app | Runs on a real iPhone; iPhone to Mac confirmed |
 
 ## Try it
@@ -33,7 +33,13 @@ On a Mac, `desktop/scripts/install-mac-agent.sh` keeps the agent running as a lo
 
 For a PC, `desktop/scripts/package-windows.sh` builds a zip that's already joined to this Mac's group. On the PC, run `setup.cmd` from it. CopyBlip then appears in the notification area.
 
-The menu bar and notification area icons show what's connected and what last synced. Their menus can pause syncing, show a QR code for adding a device, open the log, or quit.
+The menu bar and notification area icons show what's connected and what last synced. **Open CopyBlip…** in their menu opens the main window (on Windows, clicking the icon does too), which has:
+
+- **Devices:** every device that has connected, with a green dot for the ones connected now.
+- **Add a Device:** a QR code for the iPhone and an invite link for computers.
+- **Settings:** pause syncing, open at login, updates, the relay and Tailscale addresses, and the log.
+
+Computers update themselves from signed releases; see [updates](docs/updates.md).
 
 Devices on the same network find each other. For other networks, use Tailscale or the relay; see [away from home](docs/away-from-home.md).
 
@@ -45,6 +51,7 @@ On Windows, allow `copyblip` through the firewall when asked. On macOS, choose A
 
 - [iPhone setup](docs/iphone-setup.md): permissions and how to use it
 - [Away from home](docs/away-from-home.md): Tailscale and the relay
+- [Updates](docs/updates.md): how computers update, and publishing a release
 - [Relay](relay/README.md): deploying it to Cloudflare
 - [Findings](docs/findings.md): what's been tested and what iOS allows
 - [Protocol](docs/protocol.md): the wire format

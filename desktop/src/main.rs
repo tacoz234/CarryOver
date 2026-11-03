@@ -2,7 +2,7 @@ use anyhow::{Context, Result, bail};
 use clap::{Parser, Subcommand};
 use copyblip::clipboard::{Clipboard, Content};
 use copyblip::config::{self, Config, DEFAULT_PORT};
-use copyblip::{discovery, hub::Hub, relay};
+use copyblip::{discovery, hub::Hub, relay, update};
 use std::net::TcpListener;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
@@ -73,6 +73,9 @@ enum Command {
         /// Show an icon in the menu bar (macOS) or notification area (Windows)
         #[arg(long)]
         tray: bool,
+        /// Open the main window at start, with --tray
+        #[arg(long, requires = "tray")]
+        window: bool,
     },
     /// Read or set a clipboard, for testing
     Clip {
@@ -87,6 +90,34 @@ enum Command {
         #[arg(long)]
         pasteboard: Option<String>,
     },
+    /// For publishing: create the release signing key if missing, and print
+    /// its public half
+    #[command(hide = true)]
+    ReleaseKey {
+        #[arg(long)]
+        key: PathBuf,
+    },
+    /// For publishing: write a signed manifest.json for the programs in a
+    /// folder, named copyblip-<platform>[.exe]
+    #[command(hide = true)]
+    ReleaseManifest {
+        #[arg(long)]
+        key: PathBuf,
+        #[arg(long)]
+        version: String,
+        #[arg(long, default_value = "")]
+        notes: String,
+        folder: PathBuf,
+    },
+}
+
+fn read_release_key(path: &std::path::Path) -> Result<[u8; 32]> {
+    let text = std::fs::read_to_string(path)
+        .with_context(|| format!("can't read the release key at {}", path.display()))?;
+    hex::decode(text.trim())
+        .ok()
+        .and_then(|bytes| bytes.try_into().ok())
+        .context("release key is malformed")
 }
 
 #[derive(Subcommand)]
@@ -164,6 +195,25 @@ fn qr(text: &str) -> Result<String> {
         out.push_str("\x1b[0m\n");
     }
     Ok(out)
+}
+
+/// After an update, the old copy may still be letting go of the port.
+fn bind(port: u16) -> Result<TcpListener> {
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+    loop {
+        match TcpListener::bind(("0.0.0.0", port)) {
+            Ok(listener) => return Ok(listener),
+            Err(error)
+                if error.kind() == std::io::ErrorKind::AddrInUse
+                    && std::time::Instant::now() < deadline =>
+            {
+                std::thread::sleep(std::time::Duration::from_millis(250));
+            }
+            Err(error) => {
+                return Err(error).with_context(|| format!("can't listen on port {port}"));
+            }
+        }
+    }
 }
 
 fn device_name() -> String {
@@ -258,6 +308,7 @@ fn main() -> Result<()> {
             pasteboard,
             background,
             tray,
+            window,
         } => {
             if background {
                 detach_console(&dir.join("copyblip.log"))?;
@@ -268,12 +319,11 @@ fn main() -> Result<()> {
             if let Some(note) = clipboard.startup_note() {
                 eprintln!("{note}");
             }
-            let listener = TcpListener::bind(("0.0.0.0", port))
-                .with_context(|| format!("can't listen on port {port}"))?;
+            let listener = bind(port)?;
             let port = listener.local_addr()?.port();
             let hub = Hub::new(key, config.device.clone(), device_name(), clipboard);
             hub.serve(listener);
-            for peer in config.peers.iter().cloned().chain(peers) {
+            for peer in peers {
                 hub.dial(Arc::new(Mutex::new(vec![config::normalize_peer(&peer)?])));
             }
             if !no_discovery {
@@ -284,18 +334,23 @@ fn main() -> Result<()> {
                 None if no_relay => None,
                 None => config.relay.clone(),
             };
-            if let Some(url) = relay_url {
-                relay::start(hub.clone(), url, &key, &config.device);
-            }
             hub.watch_clipboard();
-            eprintln!("syncing on port {port}");
+            eprintln!("CopyBlip {} syncing on port {port}", update::VERSION);
             if tray {
                 #[cfg(target_os = "macos")]
                 let log = PathBuf::from(std::env::var_os("HOME").context("no home folder")?)
                     .join("Library/Logs/CopyBlip.log");
                 #[cfg(windows)]
                 let log = dir.join("copyblip.log");
-                copyblip::tray::run(hub, config.invite_link(), log);
+                hub.remember_devices(dir.join("devices.json"));
+                let app = copyblip::app::App::start(hub, dir, config, relay_url, log)?;
+                copyblip::tray::run(app, window);
+            }
+            for peer in &config.peers {
+                hub.dial(Arc::new(Mutex::new(vec![peer.clone()])));
+            }
+            if let Some(url) = relay_url {
+                relay::start(hub.clone(), url, &key, &config.device);
             }
             loop {
                 std::thread::park();
@@ -320,6 +375,67 @@ fn main() -> Result<()> {
                     (None, _) => bail!("nothing syncable on the clipboard"),
                 }
             }
+        }
+        Command::ReleaseKey { key } => {
+            if !key.exists() {
+                use std::io::Write;
+                #[cfg(unix)]
+                use std::os::unix::fs::OpenOptionsExt;
+                std::fs::create_dir_all(key.parent().context("key path has no folder")?)?;
+                let mut options = std::fs::OpenOptions::new();
+                options.write(true).create_new(true);
+                #[cfg(unix)]
+                options.mode(0o600);
+                let mut file = options.open(&key)?;
+                writeln!(file, "{}", hex::encode(rand::random::<[u8; 32]>()))?;
+                eprintln!(
+                    "Created {}. Back it up: losing it means no more updates.",
+                    key.display()
+                );
+            }
+            println!("{}", update::public_key_for(&read_release_key(&key)?));
+        }
+        Command::ReleaseManifest {
+            key,
+            version,
+            notes,
+            folder,
+        } => {
+            use sha2::Digest;
+            let secret = read_release_key(&key)?;
+            let mut files = std::collections::BTreeMap::new();
+            for entry in std::fs::read_dir(&folder)? {
+                let name = entry?.file_name().to_string_lossy().into_owned();
+                let Some(platform) = name
+                    .strip_prefix("copyblip-")
+                    .map(|rest| rest.trim_end_matches(".exe").to_owned())
+                else {
+                    continue;
+                };
+                let bytes = std::fs::read(folder.join(&name))?;
+                files.insert(
+                    platform,
+                    update::Program {
+                        size: bytes.len() as u64,
+                        sha256: hex::encode(sha2::Sha256::digest(&bytes)),
+                        name,
+                    },
+                );
+            }
+            if files.is_empty() {
+                bail!("no copyblip-<platform> programs in {}", folder.display());
+            }
+            let manifest = serde_json::to_vec_pretty(&update::Manifest {
+                version,
+                notes,
+                files,
+            })?;
+            std::fs::write(folder.join("manifest.json"), &manifest)?;
+            std::fs::write(
+                folder.join("manifest.json.sig"),
+                update::sign(&manifest, &secret),
+            )?;
+            println!("Wrote a signed manifest in {}", folder.display());
         }
     }
     Ok(())

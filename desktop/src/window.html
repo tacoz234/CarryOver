@@ -1,0 +1,433 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CopyBlip</title>
+<style>
+  :root {
+    --accent: #6402f9;
+    --accent-text: #fff;
+    --bg: #f5f5f7;
+    --side: #ebebef;
+    --card: #fff;
+    --text: #1d1d1f;
+    --muted: #6e6e73;
+    --line: rgba(0, 0, 0, 0.08);
+    --hover: rgba(0, 0, 0, 0.05);
+    --green: #28a745;
+    --danger: #d70015;
+    color-scheme: light dark;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --accent: #8b4dff;
+      --bg: #1f1f1f;
+      --side: #2a2a2a;
+      --card: #2c2c2e;
+      --text: #f5f5f7;
+      --muted: #a1a1a6;
+      --line: rgba(255, 255, 255, 0.09);
+      --hover: rgba(255, 255, 255, 0.06);
+      --green: #32d74b;
+      --danger: #ff6961;
+    }
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; }
+  body {
+    display: flex;
+    font: 14px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    -webkit-user-select: none;
+    user-select: none;
+    cursor: default;
+  }
+  nav {
+    width: 200px;
+    flex: none;
+    background: var(--side);
+    padding: 22px 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+  nav h1 { font-size: 24px; margin: 0 10px 18px; letter-spacing: -0.02em; }
+  nav button {
+    all: unset;
+    padding: 8px 10px;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  nav button:hover { background: var(--hover); }
+  nav button.active { background: var(--accent); color: var(--accent-text); }
+  nav svg { width: 18px; height: 18px; flex: none; }
+  nav .foot { margin-top: auto; padding: 0 10px; color: var(--muted); font-size: 12px; }
+  main { flex: 1; overflow-y: auto; padding: 26px 30px 30px; }
+  section { display: none; max-width: 560px; }
+  section.active { display: block; }
+  h2 { font-size: 20px; margin: 0 0 4px; }
+  h3 { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); margin: 26px 0 8px; }
+  p { margin: 0 0 12px; }
+  .muted { color: var(--muted); }
+  .card { background: var(--card); border-radius: 12px; border: 1px solid var(--line); overflow: hidden; }
+  .row { display: flex; align-items: center; gap: 12px; padding: 11px 14px; min-height: 52px; }
+  .row + .row { border-top: 1px solid var(--line); }
+  .row .grow { flex: 1; min-width: 0; }
+  .row .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .row .sub { font-size: 12px; color: var(--muted); }
+  .avatar {
+    width: 36px; height: 36px; border-radius: 50%; flex: none;
+    background: var(--hover); display: grid; place-items: center;
+  }
+  .avatar svg { width: 20px; height: 20px; }
+  .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--green); flex: none; }
+  .banner { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; margin: 14px 0; display: flex; gap: 12px; align-items: center; }
+  .banner .grow { flex: 1; }
+  button.btn {
+    font: inherit; border: 1px solid var(--line); background: var(--card); color: var(--text);
+    border-radius: 8px; padding: 6px 12px; cursor: pointer;
+  }
+  button.btn:hover { background: var(--hover); }
+  button.btn.primary { background: var(--accent); border-color: transparent; color: var(--accent-text); }
+  button.btn:disabled { opacity: 0.5; cursor: default; }
+  button.link { all: unset; color: var(--accent); cursor: pointer; font-size: 13px; }
+  button.remove { all: unset; color: var(--muted); cursor: pointer; font-size: 13px; padding: 2px 6px; border-radius: 6px; visibility: hidden; }
+  .row:hover button.remove { visibility: visible; }
+  button.remove:hover { color: var(--danger); background: var(--hover); }
+  input[type=text] {
+    font: inherit; color: var(--text); background: var(--bg); border: 1px solid var(--line);
+    border-radius: 8px; padding: 6px 10px; flex: 1; min-width: 0; -webkit-user-select: text; user-select: text;
+  }
+  input[type=text]:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+  .switch { position: relative; width: 38px; height: 22px; flex: none; }
+  .switch input { opacity: 0; width: 0; height: 0; position: absolute; }
+  .switch span { position: absolute; inset: 0; background: var(--line); border-radius: 11px; transition: background 0.15s; cursor: pointer; }
+  .switch span::after { content: ""; position: absolute; left: 2px; top: 2px; width: 18px; height: 18px; background: #fff; border-radius: 50%; box-shadow: 0 1px 2px rgba(0,0,0,.3); transition: transform 0.15s; }
+  .switch input:checked + span { background: var(--accent); }
+  .switch input:checked + span::after { transform: translateX(16px); }
+  @media (prefers-color-scheme: light) { .switch span { background: #d1d1d6; } }
+  .qr { display: flex; gap: 18px; align-items: center; padding: 16px; }
+  .qr svg { width: 180px; height: 180px; flex: none; border-radius: 8px; }
+  .secret { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12px; word-break: break-all; -webkit-user-select: text; user-select: text; cursor: text; padding: 10px 14px; background: var(--bg); border-radius: 8px; margin: 10px 14px 14px; }
+  ol { margin: 0 0 12px; padding-left: 20px; }
+  ol li { margin-bottom: 4px; }
+  code { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12px; background: var(--hover); padding: 1px 5px; border-radius: 5px; }
+  .empty { padding: 18px 14px; color: var(--muted); }
+  #toast {
+    position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%) translateY(80px);
+    background: var(--text); color: var(--bg); padding: 9px 16px; border-radius: 10px;
+    transition: transform 0.2s; max-width: 80%; font-size: 13px;
+  }
+  #toast.show { transform: translateX(-50%) translateY(0); }
+</style>
+</head>
+<body>
+<nav>
+  <h1>CopyBlip</h1>
+  <button data-tab="devices" class="active">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="14" height="10" rx="1.5"/><path d="M6 18h6M9 14v4"/><rect x="17" y="8" width="5" height="11" rx="1"/></svg>
+    Devices
+  </button>
+  <button data-tab="add">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v8M8 12h8"/></svg>
+    Add a Device
+  </button>
+  <button data-tab="settings">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>
+    Settings
+  </button>
+  <div class="foot" id="version"></div>
+</nav>
+
+<main>
+  <section id="devices" class="active">
+    <h2>Devices</h2>
+    <p class="muted" id="activity">Nothing synced yet</p>
+    <div class="banner" id="paused" hidden>
+      <div class="grow">Syncing is paused. Copies here aren't shared, and copies from other devices aren't applied.</div>
+      <button class="btn primary" id="resume">Resume</button>
+    </div>
+    <div class="banner" id="update-banner" hidden>
+      <div class="grow" id="update-banner-text"></div>
+      <button class="btn primary" id="update-banner-install">Install</button>
+    </div>
+    <div class="card" id="device-list"></div>
+  </section>
+
+  <section id="add">
+    <h2>Add a Device</h2>
+    <p class="muted">The invite holds your group's key. Anyone who gets it can read what you copy, so only use it with your own devices.</p>
+
+    <h3>iPhone</h3>
+    <div class="card">
+      <div class="row" id="qr-hidden">
+        <div class="grow">Install CopyBlip on the iPhone, then scan a QR code with its Camera app.</div>
+        <button class="btn primary" id="show-qr">Show QR Code</button>
+      </div>
+      <div class="qr" id="qr" hidden>
+        <div id="qr-code"></div>
+        <ol>
+          <li>Open the Camera app on the iPhone.</li>
+          <li>Point it at this code.</li>
+          <li>Tap the CopyBlip link, then Join.</li>
+        </ol>
+      </div>
+    </div>
+
+    <h3>Another computer</h3>
+    <div class="card">
+      <div class="row">
+        <div class="grow">Install CopyBlip, run <code>copyblip join</code>, and paste the invite link.</div>
+        <button class="btn" id="show-link">Show Link</button>
+      </div>
+      <div class="secret" id="link" hidden></div>
+    </div>
+  </section>
+
+  <section id="settings">
+    <h2>Settings</h2>
+
+    <h3>General</h3>
+    <div class="card">
+      <label class="row">
+        <div class="grow">Pause syncing<div class="sub">Stop sending and receiving until turned back on.</div></div>
+        <span class="switch"><input type="checkbox" id="pause"><span></span></span>
+      </label>
+      <label class="row" id="login-row">
+        <div class="grow">Open at login<div class="sub">Start CopyBlip in the background when you sign in.</div></div>
+        <span class="switch"><input type="checkbox" id="login"><span></span></span>
+      </label>
+    </div>
+
+    <h3>Updates</h3>
+    <div class="card">
+      <div class="row">
+        <div class="grow"><span id="update-status">CopyBlip</span><div class="sub" id="update-detail"></div></div>
+        <button class="btn" id="update-action">Check for Updates</button>
+      </div>
+      <label class="row">
+        <div class="grow">Install updates automatically<div class="sub">CopyBlip restarts itself for a moment to finish.</div></div>
+        <span class="switch"><input type="checkbox" id="auto-update"><span></span></span>
+      </label>
+    </div>
+
+    <h3>Away from home</h3>
+    <p class="muted">Devices on the same Wi-Fi find each other. To sync across networks, use a relay, Tailscale addresses, or both.</p>
+    <div class="card">
+      <div class="row">
+        <div class="grow">Relay<div class="sub">Your CopyBlip relay's address. Leave empty to turn it off.</div></div>
+      </div>
+      <form class="row" id="relay-form">
+        <input type="text" id="relay" placeholder="https://copyblip-relay.you.workers.dev" spellcheck="false" autocomplete="off">
+        <button class="btn" type="submit">Save</button>
+      </form>
+    </div>
+    <div class="card" style="margin-top: 12px">
+      <div class="row">
+        <div class="grow">Computer addresses<div class="sub">Other computers to reach directly, such as Tailscale names or 100.x addresses.</div></div>
+      </div>
+      <div id="peer-list"></div>
+      <form class="row" id="peer-form">
+        <input type="text" id="peer" placeholder="macmini or 100.64.0.1" spellcheck="false" autocomplete="off">
+        <button class="btn" type="submit">Add</button>
+      </form>
+    </div>
+
+    <h3>Troubleshooting</h3>
+    <div class="card">
+      <div class="row">
+        <div class="grow">Log<div class="sub">What CopyBlip has been doing. Never includes what you copied.</div></div>
+        <button class="btn" id="open-log">Open Log</button>
+      </div>
+    </div>
+  </section>
+</main>
+<div id="toast"></div>
+
+<script>
+  const $ = (id) => document.getElementById(id);
+  const send = (cmd, extra = {}) => window.ipc.postMessage(JSON.stringify({ cmd, ...extra }));
+  let state = null;
+  let invite = null;
+
+  const icons = {
+    computer: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><rect x="3" y="4" width="18" height="12" rx="1.5"/><path d="M8 20h8M12 16v4"/></svg>',
+    phone: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><rect x="6" y="2" width="12" height="20" rx="2.5"/><path d="M11 18h2"/></svg>',
+  };
+  const isPhone = (name) => /iphone|ipad|ipod/i.test(name);
+
+  function el(tag, props = {}, children = []) {
+    const node = document.createElement(tag);
+    Object.assign(node, props);
+    for (const child of [].concat(children)) node.append(child);
+    return node;
+  }
+
+  function deviceRow(name, sub, connected, icon) {
+    const avatar = el("div", { className: "avatar", innerHTML: icon });
+    const text = el("div", { className: "grow" }, [
+      el("div", { className: "name", textContent: name }),
+      el("div", { className: "sub", textContent: sub }),
+    ]);
+    const row = el("div", { className: "row" }, [avatar, text]);
+    if (connected) row.append(el("span", { className: "dot", title: "Connected" }));
+    return row;
+  }
+
+  function renderDevices() {
+    const list = $("device-list");
+    list.replaceChildren(deviceRow(state.name, "This computer", false, icons.computer));
+    for (const device of state.devices) {
+      const row = deviceRow(device.name, device.seen, device.connected, isPhone(device.name) ? icons.phone : icons.computer);
+      if (!device.connected) {
+        row.append(el("button", {
+          className: "remove",
+          textContent: "Remove",
+          title: "Remove from this list. It comes back if the device connects again.",
+          onclick: () => send("forget", { device: device.id }),
+        }));
+      }
+      list.append(row);
+    }
+    if (state.devices.length === 0) {
+      list.append(el("div", { className: "empty" }, [
+        "No other devices yet. ",
+        el("button", { className: "link", textContent: "Add one", onclick: () => show("add") }),
+      ]));
+    }
+  }
+
+  function renderPeers() {
+    const list = $("peer-list");
+    list.replaceChildren(...state.peers.map((peer) => el("div", { className: "row" }, [
+      el("div", { className: "grow name", textContent: peer }),
+      el("button", { className: "remove", textContent: "Remove", onclick: () => send("removePeer", { address: peer }) }),
+    ])));
+  }
+
+  function renderUpdate() {
+    const update = state.update;
+    const status = $("update-status"), detail = $("update-detail"), action = $("update-action");
+    const banner = $("update-banner");
+    status.textContent = `CopyBlip ${state.version}`;
+    action.disabled = false;
+    action.className = "btn";
+    action.textContent = "Check for Updates";
+    banner.hidden = true;
+    switch (update.state) {
+      case "checking":
+        detail.textContent = "Checking for updates…";
+        action.disabled = true;
+        break;
+      case "current":
+        detail.textContent = "You're up to date.";
+        break;
+      case "available":
+        detail.textContent = `Version ${update.version} is available.${update.notes ? " " + update.notes : ""}`;
+        action.textContent = `Install ${update.version}`;
+        action.className = "btn primary";
+        banner.hidden = false;
+        $("update-banner-text").textContent = `CopyBlip ${update.version} is available.`;
+        break;
+      case "installing":
+        detail.textContent = `Installing ${update.version}…`;
+        action.disabled = true;
+        break;
+      case "ready":
+        detail.textContent = `Restarting to finish installing ${update.version}…`;
+        action.disabled = true;
+        break;
+      case "failed":
+        detail.textContent = `${update.message} Try again later.`;
+        break;
+      default:
+        detail.textContent = "";
+    }
+  }
+
+  // Called by CopyBlip with a fresh snapshot.
+  window.render = (next) => {
+    state = next;
+    $("version").textContent = `Version ${state.version}`;
+    $("activity").textContent = state.activity ? `Last sync: ${state.activity}` : "Nothing synced yet";
+    $("paused").hidden = !state.paused;
+    $("pause").checked = state.paused;
+    $("login").checked = state.login;
+    $("auto-update").checked = state.autoUpdate;
+    // Doesn't overwrite what someone is typing.
+    const relay = $("relay");
+    if (document.activeElement !== relay && !relay.dataset.dirty) relay.value = state.relay;
+    renderDevices();
+    renderPeers();
+    renderUpdate();
+  };
+
+  window.setInvite = (svg, link) => {
+    invite = { svg, link };
+    $("qr-code").innerHTML = svg;
+    $("link").textContent = link;
+  };
+
+  let toastTimer;
+  window.toast = (message) => {
+    const toast = $("toast");
+    toast.textContent = message;
+    toast.classList.add("show");
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => toast.classList.remove("show"), 3500);
+  };
+
+  function show(tab) {
+    for (const button of document.querySelectorAll("nav button")) {
+      button.classList.toggle("active", button.dataset.tab === tab);
+    }
+    for (const section of document.querySelectorAll("section")) {
+      section.classList.toggle("active", section.id === tab);
+    }
+    // The invite hides again whenever its page is left.
+    if (tab !== "add") {
+      $("qr").hidden = true;
+      $("qr-hidden").hidden = false;
+      $("link").hidden = true;
+      $("show-link").textContent = "Show Link";
+    }
+  }
+  window.show = show;
+
+  for (const button of document.querySelectorAll("nav button")) {
+    button.onclick = () => show(button.dataset.tab);
+  }
+  $("show-qr").onclick = () => { $("qr").hidden = false; $("qr-hidden").hidden = true; };
+  $("show-link").onclick = () => {
+    const link = $("link");
+    link.hidden = !link.hidden;
+    $("show-link").textContent = link.hidden ? "Show Link" : "Hide Link";
+  };
+  $("resume").onclick = () => send("pause", { on: false });
+  $("pause").onchange = (event) => send("pause", { on: event.target.checked });
+  $("login").onchange = (event) => send("login", { on: event.target.checked });
+  $("auto-update").onchange = (event) => send("autoUpdate", { on: event.target.checked });
+  $("update-action").onclick = () => send(state.update.state === "available" ? "installUpdate" : "checkUpdate");
+  $("update-banner-install").onclick = () => send("installUpdate");
+  $("open-log").onclick = () => send("openLog");
+  $("relay").oninput = (event) => { event.target.dataset.dirty = "1"; };
+  $("relay-form").onsubmit = (event) => {
+    event.preventDefault();
+    delete $("relay").dataset.dirty;
+    send("relay", { url: $("relay").value });
+    $("relay").blur();
+  };
+  $("peer-form").onsubmit = (event) => {
+    event.preventDefault();
+    const input = $("peer");
+    if (input.value.trim()) send("addPeer", { address: input.value });
+    input.value = "";
+  };
+  send("ready");
+</script>
+</body>
+</html>

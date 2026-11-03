@@ -17,14 +17,9 @@ Either way, the relay or Tailscale only ever carries encrypted data. Only device
 
 1. Install [Tailscale](https://tailscale.com) on each device and sign in with the same account.
 2. Find each computer's Tailscale name or `100.x` address in the Tailscale app.
-3. On each computer, add the other computers, then restart CopyBlip:
+3. On each computer, open **CopyBlip › Settings** and add the other computers under **Computer addresses**. They apply right away.
 
-   ```sh
-   copyblip peer add macmini          # or 100.64.0.1, or name:port
-   copyblip peer list
-   ```
-
-   On a Mac using the login item, restart it with `desktop/scripts/install-mac-agent.sh`. On Windows, sign out and back in, or run `setup.cmd` again.
+   From a terminal, `copyblip peer add macmini` (or `100.64.0.1`, or `name:port`) does the same, but needs CopyBlip restarted.
 
 4. On the iPhone, open **CopyBlip › Away From Home** and add each computer under **Computer Addresses**. Keep Tailscale's VPN on.
 
@@ -32,14 +27,12 @@ Either way, the relay or Tailscale only ever carries encrypted data. Only device
 
 Deploy the relay once, as described in [relay/README.md](../relay/README.md). Then:
 
-1. On each computer, save the relay and restart CopyBlip:
+1. On each computer, enter the relay's address in **CopyBlip › Settings › Relay** and click Save. It applies right away.
 
-   ```sh
-   copyblip relay https://copyblip-relay.<you>.workers.dev
-   ```
+   From a terminal, `copyblip relay https://copyblip-relay.<you>.workers.dev` does the same, but needs CopyBlip restarted.
 
 2. On the iPhone, either:
-   - run `copyblip invite` on a computer and scan the QR code with the Camera app, which sets the relay too, or
+   - open **Add a Device** in CopyBlip on a computer and scan the QR code with the Camera app, which sets the relay too, or
    - enter the relay address under **CopyBlip › Away From Home › Relay**.
 
 `copyblip relay` shows the current relay, and `copyblip relay --off` stops using it.

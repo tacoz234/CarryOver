@@ -8,6 +8,7 @@ use serde::Deserialize;
 use std::collections::HashSet;
 use std::io::{ErrorKind, Read, Write};
 use std::net::{Shutdown, TcpListener, TcpStream, ToSocketAddrs};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
@@ -36,25 +37,43 @@ struct Relay {
     base: String,
     device: String,
     dialing: Mutex<HashSet<String>>,
+    stopped: AtomicBool,
+}
+
+/// Stops listening on the relay when told to. Pipes already open stay up
+/// until they drop.
+pub struct Handle(Arc<Relay>);
+
+impl Handle {
+    pub fn stop(&self) {
+        self.0.stopped.store(true, Ordering::Relaxed);
+    }
 }
 
 /// Keeps this device listening on the relay, and dials other computers there
 /// that aren't connected directly.
-pub fn start(hub: Arc<Hub>, url: String, key: &GroupKey, device: &str) {
+pub fn start(hub: Arc<Hub>, url: String, key: &GroupKey, device: &str) -> Handle {
     let relay = Arc::new(Relay {
         hub,
         base: format!("{url}/v1/rooms/{}", relay_room(key)),
         device: device.to_owned(),
         dialing: Mutex::new(HashSet::new()),
+        stopped: AtomicBool::new(false),
     });
-    thread::spawn(move || relay.listen_forever());
+    let listener = relay.clone();
+    thread::spawn(move || listener.listen_forever());
+    Handle(relay)
 }
 
 impl Relay {
+    fn stopped(&self) -> bool {
+        self.stopped.load(Ordering::Relaxed)
+    }
+
     fn listen_forever(self: Arc<Self>) {
         let mut delay = Duration::from_secs(1);
         let mut reported = false;
-        loop {
+        while !self.stopped() {
             let started = Instant::now();
             match self.listen() {
                 Ok(()) => {}
@@ -68,7 +87,11 @@ impl Relay {
                 delay = Duration::from_secs(1);
                 reported = false;
             }
-            thread::sleep(delay);
+            // Sleeps in steps so stopping doesn't wait out a long retry.
+            let until = Instant::now() + delay;
+            while Instant::now() < until && !self.stopped() {
+                thread::sleep(Duration::from_millis(250));
+            }
             delay = (delay * 2).min(MAX_RETRY);
         }
     }
@@ -81,6 +104,12 @@ impl Relay {
         let mut last_ping = Instant::now();
         let mut last_redial = Instant::now();
         loop {
+            if self.stopped() {
+                let _ = socket.close(None);
+                let _ = socket.flush();
+                eprintln!("stopped using the relay");
+                return Ok(());
+            }
             if last_ping.elapsed() > KEEPALIVE {
                 socket.send(Message::text("ping"))?;
                 last_ping = Instant::now();

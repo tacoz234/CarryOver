@@ -1,6 +1,6 @@
 [package]
 name = "copyblip"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2024"
 
 [dependencies]
@@ -8,6 +8,7 @@ anyhow = "1.0.104"
 base64 = "0.23.1"
 chacha20poly1305 = "0.11.0"
 clap = { version = "4.6.7", features = ["derive"] }
+ed25519-dalek = "3"
 hex = "0.4.3"
 hkdf = "0.13.0"
 image = { version = "0.25.10", default-features = false, features = ["png", "bmp"] }
@@ -20,6 +21,7 @@ sha2 = "0.11.1"
 tao = "0.37.2"
 tray-icon = "0.26.1"
 tungstenite = { version = "0.30.0", default-features = false, features = ["handshake", "rustls-tls-webpki-roots"] }
+ureq = "3"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2 = "0.6.5"
@@ -28,6 +30,9 @@ objc2-foundation = "0.3.2"
 
 [target."cfg(windows)".dependencies]
 windows = { version = "0.62.2", features = ["Win32_Foundation", "Win32_System_Console", "Win32_System_DataExchange", "Win32_System_Memory", "Win32_System_Ole"] }
+
+[target.'cfg(any(target_os = "macos", windows))'.dependencies]
+wry = "0.57"
 
 [build-dependencies]
 winresource = "0.1.34"

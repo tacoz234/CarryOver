@@ -33,5 +33,10 @@ cat > "$plist" <<EOF
 EOF
 
 launchctl bootout "gui/$(id -u)/$label" 2>/dev/null || true
-launchctl bootstrap "gui/$(id -u)" "$plist"
+# Unloading finishes in the background, so loading right away can fail.
+for attempt in 1 2 3 4 5 6 7 8 9 10; do
+  launchctl bootstrap "gui/$(id -u)" "$plist" 2>/dev/null && break
+  [ "$attempt" = 10 ] && launchctl bootstrap "gui/$(id -u)" "$plist"
+  sleep 1
+done
 echo "CopyBlip is running and will start at login. Log: $log"

@@ -265,7 +265,11 @@ fn attach_console() {
 
 fn main() -> Result<()> {
     #[cfg(target_os = "macos")]
-    copyblip::update::repair_bundle_signature()?;
+    if let Err(error) = copyblip::update::repair_bundle_signature() {
+        // A damaged resource seal should not turn an otherwise runnable app
+        // into a launchd restart loop. The installer can repair its resources.
+        eprintln!("couldn't repair the app signature; reinstall from the disk image: {error:#}");
+    }
     #[cfg(windows)]
     if std::env::args_os().len() > 1 {
         attach_console();

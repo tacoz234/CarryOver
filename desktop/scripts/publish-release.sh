@@ -11,7 +11,7 @@ set -eu
 root=$(cd "$(dirname "$0")/.." && pwd)
 key=${COPYBLIP_RELEASE_KEY:-"$HOME/.config/copyblip/release-signing-key"}
 # Space-separated, to publish to more than one repo.
-repos=${COPYBLIP_RELEASE_REPO:-tacoz234/copyblip}
+repos=${COPYBLIP_RELEASE_REPO:-tacoz234/CarryOver}
 stage_only=
 if [ "${1:-}" = "--stage" ]; then
   stage=$2

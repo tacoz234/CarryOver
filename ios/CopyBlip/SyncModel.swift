@@ -43,6 +43,12 @@ final class SyncModel {
         let text: String?
     }
 
+    private(set) var pasteCheck = PasteAccessCheck.notChecked
+    private(set) var localConnectionVerified = false
+    private(set) var verifyingGroupConnection = false
+    /// Prevent a check's system alert from starting an automatic sync.
+    private var checkingPaste = false
+    var permissionChecklistVisible = false
     private(set) var status = Status.idle
     private(set) var group: GroupKey?
     var showingSetup = false
@@ -109,6 +115,7 @@ final class SyncModel {
         if let code = ProcessInfo.processInfo.environment["COPYBLIP_PAIRING_CODE"] {
             // Scripts can't tap through the setup guide.
             defaults.set(true, forKey: "setupShown")
+            defaults.set(true, forKey: "permissionChecklistShown")
             needsOnboarding = false
             if group != GroupKey(pairingCode: code) { _ = join(code: code) }
         }
@@ -117,8 +124,9 @@ final class SyncModel {
     }
 
     private func showSetupOnce() {
-        guard !needsOnboarding, !defaults.bool(forKey: "setupShown") else { return }
+        guard !needsOnboarding, !defaults.bool(forKey: "permissionChecklistShown") else { return }
         defaults.set(true, forKey: "setupShown")
+        defaults.set(true, forKey: "permissionChecklistShown")
         showingSetup = true
     }
 
@@ -200,15 +208,45 @@ final class SyncModel {
     /// Checks the group's authenticated connection without touching clipboard data.
     func verifyGroupConnection() async throws -> [String] {
         guard let client else { return [] }
-        let (seen, verified) = try await client.connect()
-        addresses = verified
-        saw(seen)
-        return seen.reached
+        verifyingGroupConnection = true
+        defer { verifyingGroupConnection = false }
+        do {
+            let (seen, verified) = try await client.connect()
+            addresses = verified
+            saw(seen)
+            return seen.reached
+        } catch {
+            localConnectionVerified = false
+            throw error
+        }
+    }
+
+    /// An explicit read test, never a silent probe. Discard the content and
+    /// remember only whether this read succeeded, not the persistent iOS setting.
+    func testPasteAccess() {
+        let board = UIPasteboard.general
+        checkingPaste = true
+        defer { checkingPaste = false }
+        pasteCheck = PasteAccessCheck.test(
+            hasText: board.hasStrings,
+            cameFromCarryover: defaults.object(forKey: "appWrittenChangeCount") as? Int == board.changeCount,
+            canReadText: { board.string != nil }
+        )
+    }
+
+    func resetPermissionChecks() {
+        pasteCheck = .notChecked
+        localConnectionVerified = false
+    }
+
+    private func markAppWrite() {
+        defaults.set(UIPasteboard.general.changeCount, forKey: "appWrittenChangeCount")
     }
 
     func finishOnboarding() {
         guard group != nil else { return }
         defaults.set(true, forKey: "setupShown")
+        defaults.set(true, forKey: "permissionChecklistShown")
         defaults.removeObject(forKey: "onboardingPending")
         needsOnboarding = false
         setupClosed()
@@ -217,6 +255,7 @@ final class SyncModel {
     func leave() {
         Keychain.delete()
         group = nil
+        localConnectionVerified = false
         needsOnboarding = true
         defaults.removeObject(forKey: "onboardingPending")
         addresses = []
@@ -296,12 +335,14 @@ final class SyncModel {
             return
         }
         handledChangeCount = board.changeCount
+        markAppWrite()
     }
 
     /// Copies text, such as the invite link, without sending it to the group.
     func copyWithoutSending(_ text: String) {
         UIPasteboard.general.string = text
         handledChangeCount = UIPasteboard.general.changeCount
+        markAppWrite()
     }
 
     func appClosed() {
@@ -311,7 +352,7 @@ final class SyncModel {
     /// Sends the clipboard if it changed since last time, otherwise fetches the
     /// latest clip from the other devices.
     func appOpened() {
-        guard !needsOnboarding, group != nil, !syncedSinceOpen, running == nil, !showingSetup else { return }
+        guard !permissionChecklistVisible, !checkingPaste, !needsOnboarding, group != nil, !syncedSinceOpen, running == nil, !showingSetup else { return }
         syncedSinceOpen = true
         let board = UIPasteboard.general
         if board.changeCount != handledChangeCount, board.hasStrings || board.hasImages {
@@ -419,6 +460,7 @@ final class SyncModel {
             }
             self.lastClipID = received.id
             self.handledChangeCount = board.changeCount
+            self.markAppWrite()
             self.record(.received, received.content, id: received.id, peers: [received.from])
             return .received(Self.preview(received.content), from: received.from)
         }
@@ -431,6 +473,7 @@ final class SyncModel {
     /// Updates who's online, and adds devices the computers know about that
     /// this iPhone hasn't synced with yet.
     private func saw(_ seen: Seen) {
+        localConnectionVerified = !seen.reached.isEmpty
         let others = seen.devices.filter { $0.device != device }
         online = Set(seen.reached + others.filter(\.connected).map(\.name))
         let now = Date()
@@ -460,10 +503,12 @@ final class SyncModel {
                 status = try await work()
                 log.info("sync finished: \(String(describing: self.status), privacy: .private)")
             } catch SyncError.noDevices {
+                localConnectionVerified = false
                 // Nothing answered, so nothing is known to be online.
                 online = []
                 status = .failed("No devices found. Make sure Carryover is running on your computer and you're on the same Wi-Fi.")
             } catch SyncError.unreachable {
+                localConnectionVerified = false
                 online = []
                 status = .failed("Couldn't connect to your computer. Make sure Carryover is running on it.")
             } catch SyncError.wrongCode {

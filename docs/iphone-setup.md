@@ -13,7 +13,7 @@ Then paste as usual. First launch shows a setup wizard; the permission guide is 
 2. Choose **I already use Carryover** to join your other devices, or **This is my first device** to create a group, then tap **Create Group**.
 3. To join, open **Add a Device** on your other device. Tap **Scan QR Code** inside Carryover on the iPhone, allow camera access, and point it at that device's QR code. Review the invite and tap **Join Group**. You can also paste an invite link or pairing code.
 4. If you create a group, the completion screen shows a QR code and **Copy Invite Link** for adding your next device.
-5. Read the permission tips, then tap **Open Carryover** to start syncing.
+5. Use the permissions checklist to test paste access and check the local connection. Open Settings and choose **Paste from Other Apps → Allow** to stop repeated paste prompts, then continue to **Open Carryover**.
 
 The scanner accepts only valid Carryover invites and doesn't join until you confirm **Join Group**. Camera permission is optional; if scanning is unsupported or access is denied, paste an invite instead. Existing paired installations keep their group and skip the wizard.
 
@@ -26,6 +26,10 @@ iOS normally asks "Allow Paste?" each time an app reads something copied in anot
 3. Choose **Allow**.
 
 If **Paste from Other Apps** isn't listed, iOS hasn't asked Carryover about pasting yet. Copy some text, open Carryover, tap **Allow Paste** once, and the setting will appear.
+
+The alert's **Allow Paste** approves a paste request; it doesn't select the persistent **Allow** preference. Setup and **Settings → Setup Guide** include **Test Paste Access**: copy text in Notes, return, and tap the test. It reads and discards the text without sending or saving it. A green check means that read worked, not that iOS's persistent setting was detected; iOS doesn't expose that setting to apps. Checks reset after returning from another app or Settings. Automatic syncing pauses while the checklist is open.
+
+The checklist also shows actual camera authorization and whether an authenticated local connection succeeded. A failed connection does not by itself mean Local Network permission was denied; Wi-Fi and whether the computer is running also matter.
 
 If you tap **Don't Allow** on the prompt, Carryover won't send that copy and will open this guide. It doesn't ask again for the same copy.
 

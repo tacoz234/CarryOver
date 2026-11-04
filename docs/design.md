@@ -104,6 +104,8 @@ The tooltip on Windows says how many devices are connected.
 
 ## iPhone setup wizard
 
-Three stages: welcome, connect your devices, and completion. A small Carryover wordmark and three progress marks stay at the top. The welcome illustration uses native device symbols around a coral clipboard. Rounded headings, grouped backgrounds, white cards and a soft coral glow carry through the flow, with system colors adapting to dark mode.
+Four stages: welcome, connect your devices, permission checks, and completion. A small Carryover wordmark and four progress marks stay at the top. The welcome illustration uses native device symbols around a coral clipboard. Rounded headings, grouped backgrounds, white cards and a soft coral glow carry through the flow, with system colors adapting to dark mode.
 
 The primary action stays at the bottom in a material footer, with Back alongside it on the pairing stage. Content scrolls independently for small screens and larger text. Pairing choices share a card pattern with a checkmark and coral outline. Scanning and pasting sit together in an invite card; errors appear beside the input and preserve its contents. Completion uses the same cards for the invite and permission tips. The primary button uses deep coral with white text for contrast.
+
+The permission checklist is shared with Settings → Setup Guide. Green checks report actual camera authorization, a successful local connection, or a successful explicit paste test. The paste check never claims to detect the persistent Ask/Allow setting. The checklist pauses automatic clipboard syncing while it is visible, retains the user's input, and gives a Settings action plus retry instructions.

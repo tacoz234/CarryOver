@@ -7,6 +7,7 @@ struct OnboardingView: View {
     @Environment(\.openURL) private var openURL
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var step = 0
+    @State private var permissionsReviewed = false
     @State private var joining = true
     @State private var code = ""
     @State private var error: String?
@@ -18,10 +19,11 @@ struct OnboardingView: View {
     @State private var connectionFailed = false
     @FocusState private var editingInvite: Bool
 
-    private var complete: Bool { model.group != nil }
-    private var page: Int { complete ? 2 : step }
+    private var showingPermissions: Bool { model.group != nil && !permissionsReviewed }
+    private var complete: Bool { model.group != nil && permissionsReviewed }
+    private var page: Int { complete ? 3 : showingPermissions ? 2 : step }
     private var canContinue: Bool {
-        complete || step == 0 || !joining || !code.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        model.group != nil || step == 0 || !joining || !code.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
     var body: some View {
@@ -29,7 +31,14 @@ struct OnboardingView: View {
             ScrollView {
                 VStack(spacing: 28) {
                     header
-                    if complete {
+                    if showingPermissions {
+                        VStack(alignment: .leading, spacing: 22) {
+                            heading("Make sharing effortless", subtitle: "Set up pasting once, then check access before you start sharing.")
+                            PermissionChecklist(model: model)
+                            Text("These checks are optional. You can revisit them from Settings → Setup Guide.")
+                                .font(.footnote).foregroundStyle(.secondary)
+                        }
+                    } else if complete {
                         completion
                     } else if step == 0 {
                         welcome
@@ -77,13 +86,13 @@ struct OnboardingView: View {
             }.font(.subheadline)
             Spacer()
             HStack(spacing: 5) {
-                ForEach(0..<3) { index in
+                ForEach(0..<4) { index in
                     Capsule().fill(index <= page ? Brand.accent : Color.primary.opacity(0.1))
                         .frame(width: index == page ? 22 : 7, height: 5)
                 }
             }
             .accessibilityElement(children: .ignore)
-            .accessibilityLabel("Step \(page + 1) of 3")
+            .accessibilityLabel("Step \(page + 1) of 4")
         }
         .padding(.vertical, 8)
     }
@@ -227,11 +236,11 @@ struct OnboardingView: View {
 
     private var footer: some View {
         VStack(spacing: 12) {
-            if step == 0 && !complete {
+            if step == 0 && model.group == nil {
                 Text("A few taps, and you're connected.").font(.footnote).foregroundStyle(.secondary)
             }
             HStack(spacing: 12) {
-                if step > 0 && !complete {
+                if step > 0 && model.group == nil {
                     Button {
                         editingInvite = false
                         changeStep(0)
@@ -245,13 +254,14 @@ struct OnboardingView: View {
                 }
                 Button {
                     editingInvite = false
-                    if complete { model.finishOnboarding() }
+                    if showingPermissions { permissionsReviewed = true }
+                    else if complete { model.finishOnboarding() }
                     else if step == 0 { changeStep(1) }
                     else { setUp() }
                 } label: {
                     HStack {
                         Spacer()
-                        Text(complete ? "Open Carryover" : step == 0 ? "Get Started" : joining ? "Join Group" : "Create Group")
+                        Text(showingPermissions ? "Continue" : complete ? "Open Carryover" : step == 0 ? "Get Started" : joining ? "Join Group" : "Create Group")
                         Image(systemName: "arrow.right").font(.subheadline.weight(.semibold))
                         Spacer()
                     }
@@ -343,16 +353,6 @@ struct OnboardingView: View {
                 .padding(20).frame(maxWidth: .infinity)
                 .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 20))
             }
-            VStack(spacing: 0) {
-                feature("Allow Local Network", detail: "Choose Allow when asked to find devices on your Wi-Fi.", icon: "wifi")
-                Divider().padding(.leading, 62)
-                feature("Allow pasting", detail: "For automatic sharing, set Paste from Other Apps to Allow in Settings after your first paste request.", icon: "doc.on.clipboard")
-                Divider().padding(.leading, 62)
-                Button("Open Carryover Settings", systemImage: "arrow.up.forward.app") {
-                    openURL(URL(string: UIApplication.openSettingsURLString)!)
-                }.font(.subheadline.weight(.medium)).padding(18)
-            }
-            .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 20))
             Text("Copy something, open Carryover, then paste.\niPhone syncs while the app is open.")
                 .font(.footnote).foregroundStyle(.secondary).multilineTextAlignment(.center)
         }

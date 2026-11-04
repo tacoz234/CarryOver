@@ -17,7 +17,7 @@ struct ContentView: View {
         }
         .tint(Brand.accent)
         .sheet(isPresented: $model.showingSetup, onDismiss: model.setupClosed) {
-            SetupGuide()
+            SetupGuide(model: model)
         }
         .onOpenURL { model.open($0) }
         .alert(
@@ -397,7 +397,7 @@ private struct SettingsSheet: View {
             List {
                 Section {
                     NavigationLink {
-                        SetupSteps()
+                        SetupSteps(model: model)
                     } label: {
                         Label("Setup Guide", systemImage: "questionmark.circle")
                     }
@@ -502,11 +502,12 @@ enum QRCode {
 }
 
 private struct SetupGuide: View {
+    let model: SyncModel
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
         NavigationStack {
-            SetupSteps()
+            SetupSteps(model: model)
                 .toolbar {
                     Button("Done") { dismiss() }
                 }
@@ -516,57 +517,21 @@ private struct SetupGuide: View {
 
 /// The setup steps, shown on first join and from Settings.
 private struct SetupSteps: View {
-    @Environment(\.openURL) private var openURL
+    let model: SyncModel
 
     var body: some View {
-        List {
-            Section {
-                Text("Carryover needs two permissions so opening it is all it takes.")
+        ScrollView {
+            VStack(alignment: .leading, spacing: 20) {
+                Text("Set up once. Share with fewer interruptions.")
+                    .font(.title2.bold())
+                PermissionChecklist(model: model)
+                Text("Copy something, open Carryover, then paste on your other device. Your devices need to be on the same Wi-Fi.")
+                    .font(.callout).foregroundStyle(.secondary)
             }
-            Section {
-                Step(number: 1, title: "Allow pasting without asking") {
-                    Text("Without this, iOS asks \"Allow Paste?\" every time Carryover sends what you copied.")
-                    Text("Open Settings below, tap **Paste from Other Apps** and choose **Allow**.")
-                    Text("If the option isn't there yet, copy some text, open Carryover and tap **Allow Paste** once. Then come back here.")
-                        .foregroundStyle(.secondary)
-                }
-                Button("Open Carryover Settings", systemImage: "gear") {
-                    openURL(URL(string: UIApplication.openSettingsURLString)!)
-                }
-            }
-            Section {
-                Step(number: 2, title: "Allow Local Network") {
-                    Text("This lets Carryover find your computer on your Wi-Fi. Choose **Allow** if iOS asks.")
-                    Text("If you chose Don't Allow, turn on **Local Network** on the same Settings page.")
-                        .foregroundStyle(.secondary)
-                }
-            }
-            Section {
-                Step(number: 3, title: "Use it") {
-                    Text("**From iPhone:** copy something, open Carryover, then paste on your computer.")
-                    Text("**To iPhone:** copy something on your computer, open Carryover, then paste on your iPhone.")
-                }
-            }
+            .frame(maxWidth: 520).padding(20).frame(maxWidth: .infinity)
         }
-        .navigationTitle("Set Up Carryover")
-    }
-}
-
-private struct Step<Content: View>: View {
-    let number: Int
-    let title: String
-    @ViewBuilder let content: Content
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Label {
-                Text(title).font(.headline)
-            } icon: {
-                Image(systemName: "\(number).circle.fill").foregroundStyle(.tint)
-            }
-            content.font(.callout)
-        }
-        .padding(.vertical, 4)
+        .background(Color(.systemGroupedBackground))
+        .navigationTitle("Setup Guide")
     }
 }
 

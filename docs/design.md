@@ -16,7 +16,7 @@ How Carryover looks and talks, on iPhone, iPad, Mac and Windows. Change this alo
 Some internal names are still CopyBlip, the app's earlier name, so paired devices and updates keep working. Users don't see them, so leave them alone:
 
 - bundle ID `com.coledeterman.CopyBlip`, the Keychain item and the Xcode project and folder names
-- the `copyblip` command and program file, and the `copyblip-releases` repo that installed copies update from
+- the `copyblip` command and program file, and the `copyblip` repo that installed copies update from
 - the settings folders, `~/Library/Application Support/CopyBlip` on Mac and `%APPDATA%\CopyBlip` and `%LOCALAPPDATA%\CopyBlip` on Windows, the log `~/Library/Logs/CopyBlip.log`, and the Windows startup entry
 - the `_copyblip._tcp` network service, and the protocol's labels and `CBLP` header
 

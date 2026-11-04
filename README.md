@@ -55,3 +55,9 @@ On Windows, allow `copyblip` through the firewall when asked. On macOS, choose A
 - [Findings](docs/findings.md): what's been tested and what iOS allows
 - [Design](docs/design.md): colors, icon, layout and wording
 - [Protocol](docs/protocol.md): the wire format
+
+## License
+
+Copyright © 2026 Cole Determan. Carryover is free software under the [GNU General Public License, version 3 or later](LICENSE): you can use, change and share it, and copies you share, changed or not, must be under the same license with their source available.
+
+Contributions are welcome. By sending one, you agree it's under the same license, and that Cole Determan may also distribute it in builds on the App Store, whose terms add restrictions the GPL doesn't allow on its own.

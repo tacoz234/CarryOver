@@ -27,7 +27,7 @@ On the Mac that holds the release key:
    desktop/scripts/publish-release.sh "What changed"
    ```
 
-This builds the Mac and Windows programs, writes and signs `manifest.json`, and publishes them as a release on [tacoz234/copyblip-releases](https://github.com/tacoz234/copyblip-releases). That repo is public and holds only release files. The source stays private.
+This builds the Mac and Windows programs, writes and signs `manifest.json`, and publishes them as a release on [tacoz234/copyblip](https://github.com/tacoz234/copyblip/releases). Releases before 0.3.2 updated from the old `tacoz234/copyblip-releases` repo.
 
 `--stage DIR` builds and signs into a folder without publishing, for testing with `COPYBLIP_UPDATE_FEED=http://127.0.0.1:<port>` pointed at a local web server serving that folder.
 

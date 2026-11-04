@@ -10,7 +10,8 @@
 set -eu
 root=$(cd "$(dirname "$0")/.." && pwd)
 key=${COPYBLIP_RELEASE_KEY:-"$HOME/.config/copyblip/release-signing-key"}
-repo=${COPYBLIP_RELEASE_REPO:-tacoz234/copyblip-releases}
+# Space-separated, to publish to more than one repo.
+repos=${COPYBLIP_RELEASE_REPO:-tacoz234/copyblip}
 stage_only=
 if [ "${1:-}" = "--stage" ]; then
   stage=$2
@@ -38,6 +39,8 @@ if [ -n "$stage_only" ]; then
   echo "Staged Carryover $version in $stage"
   exit 0
 fi
-gh release create "v$version" --repo "$repo" --title "Carryover $version" --notes "${notes:-Carryover $version}" \
-  "$stage"/copyblip-* "$stage/manifest.json" "$stage/manifest.json.sig"
+for repo in $repos; do
+  gh release create "v$version" --repo "$repo" --title "Carryover $version" --notes "${notes:-Carryover $version}" \
+    "$stage"/copyblip-* "$stage/manifest.json" "$stage/manifest.json.sig"
+done
 echo "Published Carryover $version. Installed copies pick it up within 6 hours, or at their next start."

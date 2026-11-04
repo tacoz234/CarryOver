@@ -22,7 +22,7 @@ pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 /// Where releases are published. GitHub serves each file of the newest
 /// release at this address. `COPYBLIP_UPDATE_FEED` overrides it for testing.
-const FEED: &str = "https://github.com/tacoz234/copyblip-releases/releases/latest/download";
+const FEED: &str = "https://github.com/tacoz234/copyblip/releases/latest/download";
 
 /// Verifies releases. The matching private key stays off the repo, in
 /// `~/.config/copyblip/release-signing-key` on the machine that publishes.

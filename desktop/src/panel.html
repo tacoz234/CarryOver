@@ -1,0 +1,231 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Carryover</title>
+<style>
+  :root {
+    --accent: #d03e26;
+    --accent-text: #fff;
+    --bg: #f3f3f3;
+    --card: #fff;
+    --text: #1d1d1f;
+    --muted: #6e6e73;
+    --line: rgba(0, 0, 0, 0.08);
+    --hover: rgba(0, 0, 0, 0.05);
+    --green: #28a745;
+    color-scheme: light dark;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --accent: #ff7a59;
+      --accent-text: #2a0d05;
+      --bg: #242424;
+      --card: #2e2e2e;
+      --text: #f5f5f7;
+      --muted: #a1a1a6;
+      --line: rgba(255, 255, 255, 0.08);
+      --hover: rgba(255, 255, 255, 0.07);
+      --green: #32d74b;
+    }
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--bg); }
+  body {
+    font: 13px/1.4 system-ui, "Segoe UI", sans-serif;
+    color: var(--text);
+    -webkit-user-select: none;
+    user-select: none;
+    cursor: default;
+    overflow: hidden;
+  }
+  [hidden] { display: none !important; }
+  #panel { padding: 14px 12px 10px; }
+  header { display: flex; align-items: center; gap: 10px; padding: 0 6px 12px; }
+  header .title { flex: 1; min-width: 0; }
+  header b { font-size: 15px; display: block; }
+  header .status { color: var(--muted); font-size: 12px; }
+  button { font: inherit; color: inherit; }
+  .open { border: none; background: var(--accent); color: var(--accent-text); border-radius: 6px; padding: 6px 12px; font-weight: 600; cursor: pointer; }
+  .open:hover { filter: brightness(1.07); }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 8px; overflow: hidden; margin-bottom: 8px; }
+  .row { all: unset; display: flex; align-items: center; gap: 10px; padding: 8px 10px; width: 100%; box-sizing: border-box; min-height: 42px; }
+  button.row { cursor: pointer; }
+  button.row:hover { background: var(--hover); }
+  .row + .row { border-top: 1px solid var(--line); }
+  .row .grow { flex: 1; min-width: 0; }
+  .row .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .row .sub { font-size: 11.5px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .avatar { width: 28px; height: 28px; border-radius: 50%; background: var(--hover); display: grid; place-items: center; flex: none; }
+  .avatar svg { width: 16px; height: 16px; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--green); flex: none; }
+  .dot.off { background: var(--muted); opacity: 0.45; }
+  .plus { color: var(--accent); }
+  .activity { color: var(--muted); font-size: 12px; padding: 2px 8px 10px; }
+  .switch { position: relative; width: 36px; height: 20px; flex: none; }
+  .switch input { opacity: 0; width: 0; height: 0; position: absolute; }
+  .switch span { position: absolute; inset: 0; background: #c7c7cc; border-radius: 10px; transition: background 0.15s; cursor: pointer; }
+  @media (prefers-color-scheme: dark) { .switch span { background: #555; } }
+  .switch span::after { content: ""; position: absolute; left: 2px; top: 2px; width: 16px; height: 16px; background: #fff; border-radius: 50%; box-shadow: 0 1px 2px rgba(0,0,0,.3); transition: transform 0.15s; }
+  .switch input:checked + span { background: var(--accent); }
+  .switch input:checked + span::after { transform: translateX(16px); }
+  label.row { cursor: pointer; }
+  label.row:hover { background: var(--hover); }
+  footer { display: flex; gap: 2px; padding-top: 2px; }
+  footer button { flex: 1 1 auto; white-space: nowrap; border: none; background: none; border-radius: 6px; padding: 7px 6px; cursor: pointer; color: var(--muted); }
+  footer button:hover { background: var(--hover); color: var(--text); }
+  footer button.highlight { color: var(--accent); font-weight: 600; }
+  footer button:disabled { opacity: 0.5; cursor: default; background: none; }
+</style>
+</head>
+<body>
+<div id="panel">
+  <header>
+    <div class="title">
+      <b>Carryover</b>
+      <div class="status" id="status"></div>
+    </div>
+    <button class="open" id="open">Open Carryover</button>
+  </header>
+  <div class="card" id="devices"></div>
+  <div class="activity" id="activity"></div>
+  <div class="card">
+    <label class="row">
+      <div class="grow">
+        <div class="name">Pause Syncing</div>
+        <div class="sub" id="pause-sub">Copies stay on this computer while paused</div>
+      </div>
+      <div class="switch"><input type="checkbox" id="pause"><span></span></div>
+    </label>
+  </div>
+  <footer>
+    <button id="update">Check for Updates</button>
+    <button id="settings">Settings</button>
+    <button id="quit">Quit</button>
+  </footer>
+</div>
+<script>
+  const $ = (id) => document.getElementById(id);
+  const send = (cmd, extra = {}) => window.ipc.postMessage(JSON.stringify({ cmd, ...extra }));
+  const icons = {
+    computer: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><rect x="3" y="4" width="18" height="12" rx="1.5"/><path d="M8 20h8M12 16v4"/></svg>',
+    phone: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><rect x="6" y="2" width="12" height="20" rx="2.5"/><path d="M11 18h2"/></svg>',
+    add: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>',
+  };
+  const isPhone = (name) => /iphone|ipad|ipod/i.test(name);
+  /** Rows show at most this many devices; the window lists them all. */
+  const MAX_DEVICES = 6;
+  let state = null;
+
+  function el(tag, props = {}, children = []) {
+    const node = document.createElement(tag);
+    Object.assign(node, props);
+    for (const child of [].concat(children)) node.append(child);
+    return node;
+  }
+
+  function row({ name, sub, icon, dot, onclick, extraClass }) {
+    const avatar = el("div", { className: "avatar" + (extraClass ? " " + extraClass : "") });
+    avatar.innerHTML = icon;
+    const children = [avatar, el("div", { className: "grow" }, [
+      el("div", { className: "name", textContent: name }),
+      ...(sub ? [el("div", { className: "sub", textContent: sub })] : []),
+    ])];
+    if (dot !== undefined) children.push(el("div", { className: "dot" + (dot ? "" : " off") }));
+    return el("button", { className: "row", onclick }, children);
+  }
+
+  function describe(device) {
+    if (device.connected) {
+      return isPhone(device.name) ? "Syncing now" : device.via ? `Online through ${device.via}` : "Online";
+    }
+    if (isPhone(device.name)) return device.ago ? `Last synced ${device.ago}` : "Syncs when you open Carryover";
+    return device.ago ? `Last seen ${device.ago}` : "Offline";
+  }
+
+  window.render = (snapshot) => {
+    state = snapshot;
+    const online = snapshot.devices.filter((device) => device.connected).length;
+    $("status").textContent = snapshot.paused
+      ? "Paused"
+      : online === 0 ? "No other devices online" : online === 1 ? "1 device online" : `${online} devices online`;
+
+    const list = $("devices");
+    list.replaceChildren();
+    for (const device of snapshot.devices.slice(0, MAX_DEVICES)) {
+      list.append(row({
+        name: device.name,
+        sub: describe(device),
+        icon: isPhone(device.name) ? icons.phone : icons.computer,
+        dot: device.connected,
+        onclick: () => send("open", { tab: "devices" }),
+      }));
+    }
+    if (snapshot.devices.length > MAX_DEVICES) {
+      list.append(row({
+        name: `${snapshot.devices.length - MAX_DEVICES} more…`,
+        icon: icons.computer,
+        onclick: () => send("open", { tab: "devices" }),
+      }));
+    }
+    list.append(row({
+      name: "Add a Device…",
+      sub: snapshot.devices.length === 0 ? "Connect your Mac, PC or iPhone" : null,
+      icon: icons.add,
+      extraClass: "plus",
+      onclick: () => send("open", { tab: "add" }),
+    }));
+
+    $("activity").textContent = snapshot.activity || "Nothing synced yet";
+    $("pause").checked = snapshot.paused;
+
+    const update = $("update");
+    update.disabled = false;
+    update.classList.remove("highlight");
+    switch (snapshot.update.state) {
+      case "checking":
+        update.textContent = "Checking…";
+        update.disabled = true;
+        break;
+      case "current":
+        update.textContent = "Up to Date";
+        break;
+      case "available":
+        update.textContent = `Install ${snapshot.update.version}`;
+        update.classList.add("highlight");
+        break;
+      case "installing":
+      case "ready":
+        update.textContent = "Updating…";
+        update.disabled = true;
+        break;
+      case "failed":
+        update.textContent = "Try Updating Again";
+        break;
+      default:
+        update.textContent = "Check for Updates";
+    }
+    reportSize();
+  };
+
+  function reportSize() {
+    send("size", { height: Math.ceil($("panel").getBoundingClientRect().height) });
+  }
+
+  window.opened = () => document.activeElement && document.activeElement.blur();
+
+  $("open").onclick = () => send("open", { tab: "devices" });
+  $("settings").onclick = () => send("open", { tab: "settings" });
+  $("quit").onclick = () => send("quit");
+  $("pause").onchange = () => send("pause", { on: $("pause").checked });
+  $("update").onclick = () => {
+    send(state && state.update.state === "available" ? "installUpdate" : "checkUpdate");
+  };
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") send("hide");
+  });
+  document.addEventListener("contextmenu", (event) => event.preventDefault());
+  send("ready");
+</script>
+</body>
+</html>

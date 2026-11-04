@@ -13,6 +13,8 @@ pub mod history;
 pub mod hub;
 #[cfg(any(target_os = "macos", windows))]
 pub mod install;
+#[cfg(windows)]
+pub mod panel;
 pub mod protocol;
 #[cfg(any(target_os = "macos", windows))]
 pub mod setup;

@@ -81,6 +81,13 @@ pub fn run(app: Arc<App>, open_window: bool) -> ! {
     // Once set, every later event repeats it, since the loop delivers a few
     // more events before ending and each would otherwise reset the flow.
     let mut exiting: Option<i32> = None;
+    // Windows: the panel the icon opens, made on first use.
+    #[cfg(windows)]
+    let mut panel: Option<crate::panel::Panel> = None;
+    // When the panel last hid, so the click on the icon that hid it doesn't
+    // open it straight back up.
+    #[cfg(windows)]
+    let mut panel_hidden_at: Option<Instant> = None;
 
     event_loop.run(move |event, target, flow| {
         if let Some(code) = exiting {
@@ -137,6 +144,37 @@ pub fn run(app: Arc<App>, open_window: bool) -> ! {
                     Err(error) => eprintln!("unknown request from the window: {error}"),
                 }
             }
+            #[cfg(windows)]
+            Event::UserEvent(UserEvent::Panel(body)) => {
+                use crate::panel::Request as PanelRequest;
+                match serde_json::from_str::<PanelRequest>(&body) {
+                    Ok(PanelRequest::Ready) => {
+                        if let Some(panel) = &mut panel {
+                            panel.loaded(&app);
+                        }
+                    }
+                    Ok(PanelRequest::Size { height }) => {
+                        if let Some(panel) = &mut panel {
+                            panel.set_height(height);
+                        }
+                    }
+                    Ok(PanelRequest::Open { tab }) => open_tab = Some(crate::panel::tab(&tab)),
+                    Ok(PanelRequest::Pause { on }) => app.hub.set_paused(on),
+                    Ok(PanelRequest::CheckUpdate) => app.updater.check_now(),
+                    Ok(PanelRequest::InstallUpdate) => app.updater.install_now(),
+                    Ok(PanelRequest::Hide) => {
+                        if let Some(panel) = &panel {
+                            panel.hide();
+                            panel_hidden_at = Some(Instant::now());
+                        }
+                    }
+                    Ok(PanelRequest::Quit) => {
+                        eprintln!("quit from the panel");
+                        exit = Some(0);
+                    }
+                    Err(error) => eprintln!("unknown request from the panel: {error}"),
+                }
+            }
             Event::WindowEvent {
                 event: WindowEvent::CloseRequested,
                 window_id,
@@ -172,17 +210,50 @@ pub fn run(app: Arc<App>, open_window: bool) -> ! {
                 exit = Some(0);
             }
         }
-        // On Windows, clicking the icon opens the window and right-clicking
-        // shows the menu.
+        // On Windows, clicking the icon, with either button, opens or
+        // closes the panel.
+        #[allow(unused_variables)]
         while let Ok(event) = tray_icon::TrayIconEvent::receiver().try_recv() {
+            #[cfg(windows)]
             if let tray_icon::TrayIconEvent::Click {
-                button: tray_icon::MouseButton::Left,
+                button: tray_icon::MouseButton::Left | tray_icon::MouseButton::Right,
                 button_state: tray_icon::MouseButtonState::Up,
+                rect,
                 ..
             } = event
-                && cfg!(windows)
             {
-                open_tab = Some("devices");
+                let just_hid = panel_hidden_at
+                    .is_some_and(|at| at.elapsed() < Duration::from_millis(400));
+                if panel.is_none() {
+                    match crate::panel::Panel::new(target, proxy.clone()) {
+                        Ok(made) => panel = Some(made),
+                        Err(error) => {
+                            eprintln!("couldn't open the panel: {error:#}");
+                            open_tab = Some("devices");
+                        }
+                    }
+                }
+                if let Some(panel) = &mut panel {
+                    if panel.is_visible() {
+                        panel.hide();
+                        panel_hidden_at = Some(Instant::now());
+                    } else if !just_hid {
+                        panel.show_at(rect, &app);
+                    }
+                }
+            }
+        }
+        // While the panel is open, check often whether another app came to
+        // the front, which closes it.
+        #[cfg(windows)]
+        if let Some(panel) = &mut panel
+            && panel.is_visible()
+        {
+            if panel.should_hide() {
+                panel.hide();
+                panel_hidden_at = Some(Instant::now());
+            } else {
+                *flow = ControlFlow::WaitUntil(Instant::now() + Duration::from_millis(100));
             }
         }
 
@@ -214,6 +285,10 @@ pub fn run(app: Arc<App>, open_window: bool) -> ! {
             // Dropping the icon removes it right away on Windows, rather than
             // when the mouse next passes over it.
             window = None;
+            #[cfg(windows)]
+            {
+                panel = None;
+            }
             tray = None;
             exiting = Some(code);
             *flow = ControlFlow::ExitWithCode(code);
@@ -246,6 +321,12 @@ pub fn run(app: Arc<App>, open_window: bool) -> ! {
         if let Some(window) = &mut window {
             window.refresh(&app);
         }
+        #[cfg(windows)]
+        if let Some(panel) = &mut panel
+            && panel.is_visible()
+        {
+            panel.refresh(&app);
+        }
     })
 }
 
@@ -267,14 +348,19 @@ fn build(items: &Items) -> Result<TrayIcon> {
     let icon = image::load_from_memory_with_format(ICON, ImageFormat::Png)?.to_rgba8();
     let (width, height) = icon.dimensions();
     let icon = Icon::from_rgba(icon.into_raw(), width, height)?;
-    let builder = TrayIconBuilder::new()
-        .with_menu(Box::new(menu))
-        .with_tooltip("Carryover");
+    let builder = TrayIconBuilder::new().with_tooltip("Carryover");
+    // On Windows the icon opens the panel instead, since a menu closes on
+    // every click.
+    #[cfg(target_os = "macos")]
+    let builder = builder.with_menu(Box::new(menu));
     // macOS recolors template images for light and dark menu bars.
     #[cfg(target_os = "macos")]
     let builder = builder.with_icon_templated(icon);
     #[cfg(windows)]
-    let builder = builder.with_icon(icon).with_menu_on_left_click(false);
+    let builder = {
+        let _ = menu;
+        builder.with_icon(icon)
+    };
     Ok(builder.build()?)
 }
 

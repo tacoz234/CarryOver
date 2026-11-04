@@ -42,7 +42,7 @@ To build the installers, run `desktop/scripts/package-windows.sh` (on a Mac with
 
 For development on a Mac, `desktop/scripts/install-mac-agent.sh` builds and runs the agent as a login item with a menu bar icon, and `uninstall-mac-agent.sh` removes it. The log is in `~/Library/Logs/CopyBlip.log`; on Windows it's `%APPDATA%\CopyBlip\copyblip.log`.
 
-The menu bar and notification area icons show what's connected and what last synced. **Open Carryover…** in their menu opens the main window (on Windows, clicking the icon does too), which has:
+The menu bar and notification area icons show what's connected and what last synced. On a Mac, the icon opens a menu. On Windows, clicking it opens a panel that stays open while you use it, with your devices, Pause Syncing and updates, and closes when you click elsewhere. **Open Carryover** in either opens the main window, which has:
 
 - **Devices:** every device in the group, with a green dot for the ones online, including ones connected through another computer.
 - **Recent:** the last 20 clips sent or received, with image thumbnails. Click one to copy it again.

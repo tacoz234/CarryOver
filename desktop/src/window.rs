@@ -14,6 +14,9 @@ const PAGE: &str = include_str!("window.html");
 #[derive(Debug)]
 pub enum UserEvent {
     Request(String),
+    /// From the notification area panel (Windows).
+    #[cfg_attr(not(windows), allow(dead_code))]
+    Panel(String),
     /// From another launch of Carryover.
     Control(crate::control::Command),
 }

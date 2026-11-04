@@ -283,6 +283,7 @@ unsafe extern "C" {
 pub fn spawn_mac(program: &Path, extra: &[&str]) -> Result<()> {
     let home = std::env::var_os("HOME").context("no home folder")?;
     let log = PathBuf::from(home).join("Library/Logs/CopyBlip.log");
+    std::fs::create_dir_all(log.parent().context("no log folder")?)?;
     let file = std::fs::OpenOptions::new()
         .create(true)
         .append(true)

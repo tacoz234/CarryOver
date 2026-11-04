@@ -41,6 +41,7 @@ pub fn set_enabled_for(program: &Path, enabled: bool) -> Result<()> {
         return Ok(());
     }
     let home = std::env::var("HOME")?;
+    std::fs::create_dir_all(PathBuf::from(&home).join("Library/Logs"))?;
     let escape = |text: &str| {
         text.replace('&', "&amp;")
             .replace('<', "&lt;")

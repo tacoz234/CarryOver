@@ -1,6 +1,8 @@
 use super::{Clipboard, Content};
 use anyhow::{Result, ensure};
 use objc2::rc::{Retained, autoreleasepool};
+use objc2::runtime::NSObjectProtocol;
+use objc2::sel;
 use objc2_app_kit::{
     NSBitmapImageFileType, NSBitmapImageRep, NSPasteboard, NSPasteboardAccessBehavior,
     NSPasteboardTypeString,
@@ -108,7 +110,12 @@ impl Clipboard for MacClipboard {
         if self.name.is_some() {
             return None;
         }
-        let behavior = autoreleasepool(|_| self.board().accessBehavior());
+        // accessBehavior was added in macOS 15.4. Older supported systems
+        // do not have pasteboard permission controls and must not receive it.
+        let behavior = autoreleasepool(|_| {
+            let board = self.board();
+            board.respondsToSelector(sel!(accessBehavior)).then(|| board.accessBehavior())
+        })?;
         const SETTINGS: &str = "System Settings > Privacy & Security > Paste from Other Apps";
         if behavior == NSPasteboardAccessBehavior::AlwaysDeny {
             Some(format!(

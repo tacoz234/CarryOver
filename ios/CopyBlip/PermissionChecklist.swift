@@ -58,6 +58,7 @@ struct PermissionChecklist: View {
                 if camera == .denied || camera == .restricted { settingsButton }
             }
         }
+        .tint(Brand.accent)
         .onAppear { model.permissionChecklistVisible = true }
         .onDisappear { model.permissionChecklistVisible = false }
         .task { camera = AVCaptureDevice.authorizationStatus(for: .video) }

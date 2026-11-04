@@ -1,15 +1,21 @@
 //! Windows: the panel the notification area icon opens, in place of a menu,
 //! like the Wi-Fi and volume flyouts. Unlike a menu it stays open while you
-//! use it, and closes when you click elsewhere. Drawn from `panel.html`.
+//! use it, and closes when you click elsewhere. It never takes the focus,
+//! so the hidden icons flyout it may open from stays open with it.
+//! Drawn from `panel.html`.
 use crate::app::App;
 use crate::window::UserEvent;
 use anyhow::Result;
 use serde_json::Value;
+use std::cell::Cell;
+use std::sync::Mutex;
+use std::sync::atomic::{AtomicBool, AtomicIsize, Ordering};
 use std::time::{Duration, Instant};
 use tao::dpi::{LogicalSize, PhysicalPosition};
 use tao::event_loop::{EventLoopProxy, EventLoopWindowTarget};
 use tao::platform::windows::{WindowBuilderExtWindows, WindowExtWindows};
 use tao::window::{Window as TaoWindow, WindowBuilder, WindowId};
+use windows::Win32::Foundation::HWND;
 use wry::{WebView, WebViewBuilder};
 
 const PAGE: &str = include_str!("panel.html");
@@ -24,13 +30,21 @@ pub struct Panel {
     /// The icon the panel opened from, in physical pixels.
     anchor: Option<tray_icon::Rect>,
     height: f64,
+    visible: Cell<bool>,
     shown_at: Instant,
-    /// Whether the panel has come to the front since it was shown.
-    was_in_front: bool,
+    /// The hidden icons flyout, when the icon was clicked there and it
+    /// stayed open. The panel closes when it does.
+    overflow: Option<isize>,
+    /// Set once the panel is clicked. Windows closes the flyout on any
+    /// click outside it, so from then on the panel stays without it.
+    detached: bool,
 }
 
 impl Panel {
-    pub fn new(target: &EventLoopWindowTarget<UserEvent>, proxy: EventLoopProxy<UserEvent>) -> Result<Self> {
+    pub fn new(
+        target: &EventLoopWindowTarget<UserEvent>,
+        proxy: EventLoopProxy<UserEvent>,
+    ) -> Result<Self> {
         let height = 420.0;
         let window = WindowBuilder::new()
             .with_title("Carryover")
@@ -46,6 +60,9 @@ impl Panel {
             .with_background_color(BACKGROUND)
             .build(target)?;
         round_corners(&window);
+        never_activate(&window);
+        *HOOK_PROXY.lock().unwrap() = Some(proxy.clone());
+        PANEL_HWND.store(window.hwnd(), Ordering::Relaxed);
         let webview = WebViewBuilder::new()
             .with_html(PAGE)
             .with_background_color(BACKGROUND)
@@ -60,8 +77,10 @@ impl Panel {
             shown: None,
             anchor: None,
             height,
+            visible: Cell::new(false),
             shown_at: Instant::now(),
-            was_in_front: false,
+            overflow: None,
+            detached: false,
         })
     }
 
@@ -70,25 +89,54 @@ impl Panel {
     }
 
     pub fn is_visible(&self) -> bool {
-        self.window.is_visible()
+        self.visible.get()
     }
 
-    /// Shows the panel beside the icon at `anchor`.
+    fn hwnd(&self) -> HWND {
+        HWND(self.window.hwnd() as _)
+    }
+
+    /// Shows the panel beside the icon at `anchor`, without taking the
+    /// focus, so the hidden icons flyout it may have opened from stays open
+    /// with it.
     pub fn show_at(&mut self, anchor: tray_icon::Rect, app: &App) {
+        use windows::Win32::UI::WindowsAndMessaging::{
+            HWND_TOPMOST, SW_SHOWNOACTIVATE, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE,
+            SetWindowPos, ShowWindow,
+        };
         self.anchor = Some(anchor);
         self.shown = None;
         self.refresh(app);
         self.place();
-        self.window.set_visible(true);
-        self.window.set_focus();
-        bring_to_front(&self.window);
+        let hwnd = self.hwnd();
+        unsafe {
+            let _ = ShowWindow(hwnd, SW_SHOWNOACTIVATE);
+            let _ = SetWindowPos(
+                hwnd,
+                Some(HWND_TOPMOST),
+                0,
+                0,
+                0,
+                0,
+                SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE,
+            );
+        }
+        self.visible.set(true);
         self.shown_at = Instant::now();
-        self.was_in_front = false;
+        self.overflow = None;
+        self.detached = false;
+        CLICKED_INSIDE.store(false, Ordering::Relaxed);
+        watch_clicks(true);
         self.call("opened", &[]);
     }
 
     pub fn hide(&self) {
-        self.window.set_visible(false);
+        use windows::Win32::UI::WindowsAndMessaging::{SW_HIDE, ShowWindow};
+        unsafe {
+            let _ = ShowWindow(self.hwnd(), SW_HIDE);
+        }
+        self.visible.set(false);
+        watch_clicks(false);
     }
 
     /// The page reports its height after drawing, so the panel fits it.
@@ -102,17 +150,29 @@ impl Panel {
         self.place();
     }
 
-    /// Whether to close the panel: another app came to the front, as when
-    /// clicking elsewhere. Carryover's own main window doesn't count, so
-    /// the panel stays open beside it.
+    /// Whether to close the panel, checked often while it's open. Clicks
+    /// elsewhere close it through [`watch_clicks`]. This catches the rest:
+    /// the hidden icons flyout closing, as with Escape, or another app
+    /// coming to the front, as with Alt+Tab.
     pub fn should_hide(&mut self) -> bool {
-        if foreground_is_ours() {
-            self.was_in_front = true;
-            return false;
+        use windows::Win32::UI::WindowsAndMessaging::IsWindowVisible;
+        if CLICKED_INSIDE.load(Ordering::Relaxed) {
+            self.detached = true;
+            self.overflow = None;
         }
-        // Windows may refuse to bring the panel to the front. Then it stays
-        // open until the icon is clicked again, rather than vanishing.
-        self.was_in_front && self.shown_at.elapsed() > Duration::from_millis(200)
+        let settled = self.shown_at.elapsed() > Duration::from_millis(300);
+        // Windows may close the flyout itself when an icon in it is
+        // clicked. Only a flyout still open once the panel has settled is
+        // one to close with.
+        if !self.detached && self.overflow.is_none() && settled {
+            self.overflow = overflow_flyout();
+        }
+        if let Some(flyout) = self.overflow
+            && !unsafe { IsWindowVisible(HWND(flyout as _)) }.as_bool()
+        {
+            return true;
+        }
+        settled && another_app_in_front()
     }
 
     /// Sends a fresh snapshot, if anything changed since the last one.
@@ -147,7 +207,8 @@ impl Panel {
         let Some(monitor) = monitor else { return };
         let scale = monitor.scale_factor();
         let (left, top) = (monitor.position().x as f64, monitor.position().y as f64);
-        let (screen_width, screen_height) = (monitor.size().width as f64, monitor.size().height as f64);
+        let (screen_width, screen_height) =
+            (monitor.size().width as f64, monitor.size().height as f64);
         let (width, height, gap) = (WIDTH * scale, self.height * scale, GAP * scale);
         let center = x + anchor.size.width as f64 / 2.0;
         let px = (center - width / 2.0).clamp(left + gap, left + screen_width - width - gap);
@@ -174,31 +235,119 @@ impl Panel {
 /// The panel's dark mode background, shown before the page draws.
 const BACKGROUND: (u8, u8, u8, u8) = (36, 36, 36, 255);
 
-fn bring_to_front(window: &TaoWindow) {
-    use windows::Win32::Foundation::HWND;
-    use windows::Win32::UI::WindowsAndMessaging::SetForegroundWindow;
+/// Whether an app other than Carryover and the Windows shell (the taskbar
+/// and its flyouts) is in front. Nothing is, briefly, while a click moves
+/// the focus.
+fn another_app_in_front() -> bool {
+    use windows::Win32::UI::WindowsAndMessaging::{
+        GetForegroundWindow, GetShellWindow, GetWindowThreadProcessId,
+    };
     unsafe {
-        let _ = SetForegroundWindow(HWND(window.hwnd() as _));
+        let front = GetForegroundWindow();
+        if front.is_invalid() {
+            return false;
+        }
+        let mut process = 0u32;
+        GetWindowThreadProcessId(front, Some(&mut process));
+        let mut shell = 0u32;
+        GetWindowThreadProcessId(GetShellWindow(), Some(&mut shell));
+        process != std::process::id() && process != shell
     }
 }
 
-fn foreground_is_ours() -> bool {
-    use windows::Win32::UI::WindowsAndMessaging::{GetForegroundWindow, GetWindowThreadProcessId};
-    let mut process = 0u32;
+/// The hidden icons flyout by the clock, if it's open: Windows 11's, then
+/// Windows 10's.
+fn overflow_flyout() -> Option<isize> {
+    use windows::Win32::UI::WindowsAndMessaging::{FindWindowW, IsWindowVisible};
+    use windows::core::w;
+    [
+        w!("TopLevelWindowForOverflowXamlIsland"),
+        w!("NotifyIconOverflowWindow"),
+    ]
+    .into_iter()
+    .filter_map(|class| unsafe { FindWindowW(class, None) }.ok())
+    .find(|window| unsafe { IsWindowVisible(*window) }.as_bool())
+    .map(|window| window.0 as isize)
+}
+
+/// Clicks on the panel mustn't take the focus from the hidden icons flyout,
+/// which would close it.
+fn never_activate(window: &TaoWindow) {
+    use windows::Win32::UI::WindowsAndMessaging::{
+        GWL_EXSTYLE, GetWindowLongW, SetWindowLongW, WS_EX_NOACTIVATE,
+    };
+    let hwnd = HWND(window.hwnd() as _);
     unsafe {
-        let window = GetForegroundWindow();
-        if window.is_invalid() {
-            return false;
-        }
-        GetWindowThreadProcessId(window, Some(&mut process));
+        let style = GetWindowLongW(hwnd, GWL_EXSTYLE);
+        SetWindowLongW(hwnd, GWL_EXSTYLE, style | WS_EX_NOACTIVATE.0 as i32);
     }
-    process == std::process::id()
+}
+
+/// Where the click watcher sends Hide, and the panel it watches.
+static HOOK_PROXY: Mutex<Option<EventLoopProxy<UserEvent>>> = Mutex::new(None);
+static PANEL_HWND: AtomicIsize = AtomicIsize::new(0);
+static HOOK: AtomicIsize = AtomicIsize::new(0);
+/// Whether the panel was clicked since it opened.
+static CLICKED_INSIDE: AtomicBool = AtomicBool::new(false);
+
+/// While the panel is open, watches mouse clicks anywhere, and hides the
+/// panel on one outside it. The panel never has the focus, so losing it
+/// can't be the signal.
+fn watch_clicks(on: bool) {
+    use windows::Win32::System::LibraryLoader::GetModuleHandleW;
+    use windows::Win32::UI::WindowsAndMessaging::{
+        HHOOK, SetWindowsHookExW, UnhookWindowsHookEx, WH_MOUSE_LL,
+    };
+    let current = HOOK.swap(0, Ordering::Relaxed);
+    if current != 0 {
+        unsafe {
+            let _ = UnhookWindowsHookEx(HHOOK(current as _));
+        }
+    }
+    if on {
+        let module = unsafe { GetModuleHandleW(None) }.ok();
+        let hook =
+            unsafe { SetWindowsHookExW(WH_MOUSE_LL, Some(mouse_hook), module.map(Into::into), 0) };
+        match hook {
+            Ok(hook) => HOOK.store(hook.0 as isize, Ordering::Relaxed),
+            Err(error) => eprintln!("couldn't watch clicks outside the panel: {error}"),
+        }
+    }
+}
+
+unsafe extern "system" fn mouse_hook(
+    code: i32,
+    wparam: windows::Win32::Foundation::WPARAM,
+    lparam: windows::Win32::Foundation::LPARAM,
+) -> windows::Win32::Foundation::LRESULT {
+    use windows::Win32::Foundation::RECT;
+    use windows::Win32::UI::WindowsAndMessaging::{
+        CallNextHookEx, GetWindowRect, MSLLHOOKSTRUCT, WM_LBUTTONDOWN, WM_MBUTTONDOWN,
+        WM_RBUTTONDOWN,
+    };
+    let button = matches!(
+        wparam.0 as u32,
+        WM_LBUTTONDOWN | WM_RBUTTONDOWN | WM_MBUTTONDOWN
+    );
+    if code >= 0 && button {
+        let point = unsafe { (*(lparam.0 as *const MSLLHOOKSTRUCT)).pt };
+        let mut rect = RECT::default();
+        let panel = HWND(PANEL_HWND.load(Ordering::Relaxed) as _);
+        let inside = unsafe { GetWindowRect(panel, &mut rect) }.is_ok()
+            && (rect.left..rect.right).contains(&point.x)
+            && (rect.top..rect.bottom).contains(&point.y);
+        if inside {
+            CLICKED_INSIDE.store(true, Ordering::Relaxed);
+        } else if let Some(proxy) = HOOK_PROXY.lock().unwrap().as_ref() {
+            let _ = proxy.send_event(UserEvent::Panel(r#"{"cmd":"hide"}"#.to_owned()));
+        }
+    }
+    unsafe { CallNextHookEx(None, code, wparam, lparam) }
 }
 
 /// Rounded corners on Windows 11, like its own flyouts. Earlier versions
 /// ignore this and keep square ones.
 fn round_corners(window: &TaoWindow) {
-    use windows::Win32::Foundation::HWND;
     use windows::Win32::Graphics::Dwm::{
         DWMWA_WINDOW_CORNER_PREFERENCE, DWMWCP_ROUND, DwmSetWindowAttribute,
     };

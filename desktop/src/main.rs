@@ -264,6 +264,8 @@ fn attach_console() {
 }
 
 fn main() -> Result<()> {
+    #[cfg(target_os = "macos")]
+    copyblip::update::repair_bundle_signature()?;
     #[cfg(windows)]
     if std::env::args_os().len() > 1 {
         attach_console();

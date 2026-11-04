@@ -12,7 +12,9 @@ Each update is checked before it's used:
 - **Matching.** The downloaded program must match the size and SHA-256 listed in the signed manifest.
 - **Newer.** Only versions newer than the running one are installed, so an old release can't be replayed to downgrade.
 
-Releases hold only the programs. Pairing codes and settings stay on each device.
+Pairing codes and settings stay on each device. Mac app-bundle updates sign an isolated staging copy, atomically swap its executable, and verify the installed signature. If verification fails, the previous executable is restored. Resources, bundle identity and the existing Info.plist stay unchanged; the in-app version reports the updated program, while Finder's version changes when installing a new disk image. Bare-binary Mac installs keep their existing atomic update path.
+
+Version 0.4.0 can also repair the bundle signature on startup after an older development build performed an executable-only update. If macOS refuses to open that damaged development bundle before startup runs, reinstall it from the current disk image. Public 0.3.2 Mac downloads were bare binaries, so they do not need this migration.
 
 The iPhone app can't update itself. iOS only allows that through the App Store or TestFlight. Until then, rebuild it from Xcode.
 

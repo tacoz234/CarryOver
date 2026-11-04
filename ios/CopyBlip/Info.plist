@@ -34,5 +34,7 @@
 	<array>
 		<string>_copyblip._tcp</string>
 	</array>
+	<key>NSCameraUsageDescription</key>
+	<string>Carryover uses the camera to scan an invite QR code from your other device.</string>
 </dict>
 </plist>

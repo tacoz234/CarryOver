@@ -1,5 +1,6 @@
 import CopyBlipKit
 import Observation
+import Security
 import UIKit
 import UniformTypeIdentifiers
 import os
@@ -45,6 +46,7 @@ final class SyncModel {
     private(set) var status = Status.idle
     private(set) var group: GroupKey?
     var showingSetup = false
+    private(set) var needsOnboarding = false
 
     /// Most recently seen first.
     private(set) var devices: [Device] = [] {
@@ -79,6 +81,14 @@ final class SyncModel {
     private let device: String
 
     init() {
+        #if DEBUG
+        // Keychain items survive uninstalling. Used explicitly by device tests
+        // after reinstalling to exercise the first-run wizard with no pairing.
+        if ProcessInfo.processInfo.arguments.contains("--reset-pairing-for-testing") {
+            Keychain.delete()
+            precondition(Keychain.load() == nil, "Couldn't clear the saved pairing for testing")
+        }
+        #endif
         if let saved = defaults.string(forKey: "device") {
             device = saved
         } else {
@@ -86,6 +96,7 @@ final class SyncModel {
             defaults.set(device, forKey: "device")
         }
         group = Keychain.load().flatMap { GroupKey(bytes: $0) as GroupKey? }
+        needsOnboarding = group == nil || defaults.bool(forKey: "onboardingPending")
         // Left by versions that could sync away from home.
         defaults.removeObject(forKey: "manualAddresses")
         defaults.removeObject(forKey: "relay")
@@ -98,14 +109,15 @@ final class SyncModel {
         if let code = ProcessInfo.processInfo.environment["COPYBLIP_PAIRING_CODE"] {
             // Scripts can't tap through the setup guide.
             defaults.set(true, forKey: "setupShown")
+            needsOnboarding = false
             if group != GroupKey(pairingCode: code) { _ = join(code: code) }
         }
         #endif
-        if group != nil { showSetupOnce() }
+        if group != nil && !needsOnboarding { showSetupOnce() }
     }
 
     private func showSetupOnce() {
-        guard !defaults.bool(forKey: "setupShown") else { return }
+        guard !needsOnboarding, !defaults.bool(forKey: "setupShown") else { return }
         defaults.set(true, forKey: "setupShown")
         showingSetup = true
     }
@@ -152,21 +164,22 @@ final class SyncModel {
     func acceptInvite() {
         guard let invite = pendingInvite else { return }
         pendingInvite = nil
-        _ = join(invite.group)
+        _ = join(invite.group, remembered: invite.addresses)
     }
 
     /// Accepts an invite link or a bare pairing code.
     func join(code: String) -> Bool {
         guard let invite = Invite(code) else { return false }
-        return join(invite.group)
+        return join(invite.group, remembered: invite.addresses)
     }
 
-    private func join(_ key: GroupKey) -> Bool {
+    private func join(_ key: GroupKey, remembered: [Address] = []) -> Bool {
         guard Keychain.save(key.bytes) else { return false }
         group = key
+        if needsOnboarding { defaults.set(true, forKey: "onboardingPending") }
         lastClipID = nil
         syncedSinceOpen = false
-        addresses = []
+        addresses = remembered
         showSetupOnce()
         // Whatever is on the clipboard now predates joining, so don't send it.
         handledChangeCount = UIPasteboard.general.changeCount
@@ -174,9 +187,38 @@ final class SyncModel {
         return true
     }
 
+    /// Generate the group secret locally, just as desktop setup does.
+    func createGroup() -> Bool {
+        var bytes = Data(count: GroupKey.length)
+        let result = bytes.withUnsafeMutableBytes { buffer in
+            SecRandomCopyBytes(kSecRandomDefault, buffer.count, buffer.baseAddress!)
+        }
+        guard result == errSecSuccess else { return false }
+        return join(GroupKey(bytes: bytes))
+    }
+
+    /// Checks the group's authenticated connection without touching clipboard data.
+    func verifyGroupConnection() async throws -> [String] {
+        guard let client else { return [] }
+        let (seen, verified) = try await client.connect()
+        addresses = verified
+        saw(seen)
+        return seen.reached
+    }
+
+    func finishOnboarding() {
+        guard group != nil else { return }
+        defaults.set(true, forKey: "setupShown")
+        defaults.removeObject(forKey: "onboardingPending")
+        needsOnboarding = false
+        setupClosed()
+    }
+
     func leave() {
         Keychain.delete()
         group = nil
+        needsOnboarding = true
+        defaults.removeObject(forKey: "onboardingPending")
         addresses = []
         devices = []
         clearHistory()
@@ -185,7 +227,11 @@ final class SyncModel {
 
     /// The link that adds a device to this group, as a QR code or pasted.
     var inviteLink: String? {
-        group.map { "carryover://join?code=\($0.pairingCode)" }
+        group.map { key in
+            let peers = addresses.filter { Address(inviteEndpoint: "\($0.host):\($0.port)") != nil }
+                .prefix(16).map { "&peer=\($0.host):\($0.port)" }.joined()
+            return "carryover://join?code=\(key.pairingCode)\(peers)"
+        }
     }
 
     func forgetDevices(at offsets: IndexSet) {
@@ -265,7 +311,7 @@ final class SyncModel {
     /// Sends the clipboard if it changed since last time, otherwise fetches the
     /// latest clip from the other devices.
     func appOpened() {
-        guard group != nil, !syncedSinceOpen, running == nil, !showingSetup else { return }
+        guard !needsOnboarding, group != nil, !syncedSinceOpen, running == nil, !showingSetup else { return }
         syncedSinceOpen = true
         let board = UIPasteboard.general
         if board.changeCount != handledChangeCount, board.hasStrings || board.hasImages {

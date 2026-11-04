@@ -25,7 +25,7 @@ Download from the [latest release](https://github.com/tacoz234/CarryOver/release
 
 The wizard asks whether this is your first device. If it is, it starts a group and shows a QR code for adding the next one. If not, paste the invite link from a device that already has Carryover (**Add a Device**, then **Show Link**).
 
-For the iPhone, open `ios/CopyBlip.xcodeproj` in Xcode and run it on your phone, then scan the QR code and follow the [setup guide](docs/iphone-setup.md). Opening the app sends your iPhone clipboard if you copied something new, and otherwise gets the latest copy from your other devices. Its main screen shows the devices you sync with and a Recent list of what you sent and received; tap an item to copy it again.
+For the iPhone, open `ios/CopyBlip.xcodeproj` in Xcode and run it on your phone, then follow the setup wizard. Join your other devices by scanning their QR code inside Carryover or pasting an invite link, or start a new group on your iPhone. See the [setup guide](docs/iphone-setup.md) for permissions. Opening the app sends your iPhone clipboard if you copied something new, and otherwise gets the latest copy from your other devices. Its main screen shows the devices you sync with and a Recent list of what you sent and received; tap an item to copy it again.
 
 ## Build it
 

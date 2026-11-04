@@ -99,3 +99,12 @@ private func body(_ frame: Data) throws -> Data {
     #expect(seen.devices == [Presence(device: "pc", name: "PC", connected: true, lastSeen: late)])
     #expect(seen.isOnline("Mac") && seen.isOnline("PC") && !seen.isOnline("iPad"))
 }
+
+@Test func invitesRetainLocalConnectionHints() {
+    let group = GroupKey(bytes: Data(repeating: 7, count: 32))
+    let invite = Invite("carryover://join?code=\(group.pairingCode)&peer=192.168.50.117:47820&peer=10.0.0.8:47820")
+    #expect(invite?.addresses == [Address(host: "192.168.50.117", port: 47820), Address(host: "10.0.0.8", port: 47820)])
+    #expect(Invite(group.pairingCode)?.addresses == [])
+    let unsafe = Invite("carryover://join?code=\(group.pairingCode)&peer=example.com:80&peer=8.8.8.8:47820&peer=192.168.1.2:0")
+    #expect(unsafe?.addresses == [])
+}

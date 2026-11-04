@@ -7,8 +7,8 @@ struct ContentView: View {
     var body: some View {
         NavigationStack {
             Group {
-                if model.group == nil {
-                    JoinView(model: model)
+                if model.needsOnboarding {
+                    OnboardingView(model: model)
                 } else {
                     SyncView(model: model)
                 }
@@ -34,33 +34,8 @@ struct ContentView: View {
     }
 }
 
-private struct JoinView: View {
-    let model: SyncModel
-    @State private var code = ""
-    @State private var invalid = false
-
-    var body: some View {
-        Form {
-            Section {
-                TextField("Invite link or pairing code", text: $code, axis: .vertical)
-                    .font(.body.monospaced())
-                    .autocorrectionDisabled()
-                    .textInputAutocapitalization(.never)
-                Button("Join") { invalid = !model.join(code: code) }
-                    .disabled(code.isEmpty)
-            } footer: {
-                Text("On a computer in your group, open Carryover and choose **Add a Device**, then scan the QR code with the Camera app. Or paste its invite link here.")
-            }
-            if invalid {
-                Text("That isn't a valid invite link or pairing code.")
-                    .foregroundStyle(.red)
-            }
-        }
-    }
-}
-
 /// Carryover's coral, matching the computers' window.
-private enum Brand {
+enum Brand {
     /// #E0482D, readable both on white and in dark mode.
     static let accent = Color(red: 0.878, green: 0.282, blue: 0.176)
     /// #FF9158 to #F0533C.
@@ -471,7 +446,7 @@ private struct AddDeviceSheet: View {
             ScrollView {
                 VStack(spacing: 20) {
                     if let link = model.inviteLink {
-                        Text("On another iPhone, scan this with the Camera app and tap the Carryover link.")
+                        Text("On another iPhone, open Carryover setup and choose Scan QR Code. You can also use the Camera app.")
                             .multilineTextAlignment(.center)
                         if let qr = QRCode.image(for: link) {
                             Image(uiImage: qr)
@@ -515,7 +490,7 @@ private struct AddDeviceSheet: View {
     }
 }
 
-private enum QRCode {
+enum QRCode {
     static func image(for text: String) -> UIImage? {
         let filter = CIFilter.qrCodeGenerator()
         filter.message = Data(text.utf8)

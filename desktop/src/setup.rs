@@ -2,7 +2,7 @@
 //! download that was just double-clicked on Windows, or a Mac or PC that
 //! isn't in a group yet. It installs the program, joins or starts a group,
 //! and starts Carryover with its tray icon, then gets out of the way.
-use crate::config::{self, Config};
+use crate::config::Config;
 use crate::control::{self, Command};
 use crate::install;
 use crate::window::qr_svg;
@@ -167,15 +167,12 @@ fn finish(
 ) -> Result<Value> {
     let joining = invite.is_some();
     let config = if pair {
-        let key = match &invite {
-            Some(text) => config::parse_invite(text).map_err(|_| {
-                anyhow::anyhow!(
-                    "That isn't a Carryover invite link. Copy it again from Add a Device on your other device."
-                )
+        Some(match &invite {
+            Some(text) => Config::from_invite(text).map_err(|_| {
+                anyhow::anyhow!("That isn't a Carryover invite link. Copy it again from Add a Device on your other device.")
             })?,
-            None => rand::random(),
-        };
-        Some(Config::new(&key))
+            None => Config::new(&rand::random()),
+        })
     } else {
         None
     };
@@ -259,7 +256,14 @@ pub fn fail(text: &str) -> ! {
     #[cfg(target_os = "macos")]
     {
         let _ = std::process::Command::new("osascript")
-            .args(["-e", "on run argv", "-e", "display alert \"Carryover\" message (item 1 of argv)", "-e", "end run"])
+            .args([
+                "-e",
+                "on run argv",
+                "-e",
+                "display alert \"Carryover\" message (item 1 of argv)",
+                "-e",
+                "end run",
+            ])
             .arg(text)
             .status();
     }

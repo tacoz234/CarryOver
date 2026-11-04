@@ -362,6 +362,7 @@ dependencies = [
  "ed25519-dalek",
  "hex",
  "hkdf",
+ "if-addrs",
  "image",
  "mdns-sd",
  "objc2",

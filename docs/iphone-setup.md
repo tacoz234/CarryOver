@@ -5,7 +5,17 @@ Once set up, opening Carryover is all it takes:
 - **You copied something on the iPhone:** Carryover sends it to your computers.
 - **Otherwise:** Carryover gets whatever you last copied on a computer and puts it on the iPhone clipboard.
 
-Then paste as usual. The app shows this guide the first time it opens, and again from **Setup Guide** in Settings (the gear button).
+Then paste as usual. First launch shows a setup wizard; the permission guide is also available from **Setup Guide** in Settings (the gear button).
+
+## Join or start a group
+
+1. Open Carryover and tap **Get Started**.
+2. Choose **I already use Carryover** to join your other devices, or **This is my first device** to create a group, then tap **Create Group**.
+3. To join, open **Add a Device** on your other device. Tap **Scan QR Code** inside Carryover on the iPhone, allow camera access, and point it at that device's QR code. Review the invite and tap **Join Group**. You can also paste an invite link or pairing code.
+4. If you create a group, the completion screen shows a QR code and **Copy Invite Link** for adding your next device.
+5. Read the permission tips, then tap **Open Carryover** to start syncing.
+
+The scanner accepts only valid Carryover invites and doesn't join until you confirm **Join Group**. Camera permission is optional; if scanning is unsupported or access is denied, paste an invite instead. Existing paired installations keep their group and skip the wizard.
 
 ## 1. Allow pasting without asking
 
@@ -38,3 +48,9 @@ If something didn't sync, the main screen has buttons to send or get manually. T
 
 - **Handoff:** if your Mac uses the same Apple account as your iPhone, Universal Clipboard may move copies between them before Carryover does. That's harmless. When the iPhone sends back what the Mac already has, the Mac doesn't rewrite its clipboard.
 - **Conflicts:** if you copied on both devices since last opening Carryover, the iPhone's copy wins.
+
+## Running in Simulator
+
+Use `ios/scripts/run-simulator.sh <simulator-UDID>` to build, install and open the app. Keep Xcode signing enabled even for Simulator: `CODE_SIGNING_ALLOWED=NO` removes the simulated app identity, causing Keychain saves (both joining and creating groups) to fail with error -34018. This is a build configuration issue, not a camera or Wi-Fi permission.
+
+`ios/scripts/test-simulator-keychain.sh <booted-simulator-UDID>` checks the real Keychain save/readback path with an isolated test service. Camera scanning still requires a supported physical iPhone.

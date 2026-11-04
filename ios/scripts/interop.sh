@@ -21,5 +21,6 @@ for _ in $(seq 50); do
   sleep 0.1
 done
 
+COPYBLIP_INTEROP_HOST="$(ipconfig getifaddr en0 2>/dev/null || true)" \
 COPYBLIP_INTEROP="$("$agent" --config-dir "$dir/a" pairing-code) $(port "$dir/a.log") $(port "$dir/b.log")" \
   swift test --no-parallel --package-path "$root/ios/CopyBlipKit" "$@"

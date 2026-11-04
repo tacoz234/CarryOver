@@ -27,6 +27,17 @@ struct Setup {
 struct DesktopInteropTests {
     let setup = Setup.current!
 
+    @Test(.enabled(if: !(ProcessInfo.processInfo.environment["COPYBLIP_INTEROP_HOST"] ?? "").isEmpty))
+    func invitedPhoneConnectsWithoutBonjour() async throws {
+        let host = ProcessInfo.processInfo.environment["COPYBLIP_INTEROP_HOST"]!
+        let invite = try #require(Invite("carryover://join?code=\(setup.key.pairingCode)&peer=\(host):\(setup.ports[0])"))
+        let client = SyncClient(group: invite.group, device: "invited-phone", name: "Invited iPhone",
+            remembered: invite.addresses, endpoints: { [] })
+        let (seen, addresses) = try await client.connect()
+        #expect(seen.reached.count == 1)
+        #expect(addresses.count == 1)
+    }
+
     @Test func sendReachesEveryDesktop() async throws {
         let (sent, addresses) = try await setup.client().send(.text("from swift \(UUID())"))
         #expect(sent.to.count == setup.ports.count)

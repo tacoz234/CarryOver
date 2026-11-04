@@ -35,6 +35,7 @@ targets:
       properties:
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        NSCameraUsageDescription: Carryover uses the camera to scan an invite QR code from your other device.
         NSBonjourServices: [_copyblip._tcp]
         # Lets the Camera app open invite QR codes from `copyblip invite`.
         CFBundleURLTypes:

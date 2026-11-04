@@ -55,6 +55,17 @@ public struct Address: Codable, Hashable, Sendable {
         self.port = port
     }
 
+    /// Invites only carry IPv4 LAN endpoints, never public servers or URLs.
+    public init?(inviteEndpoint: String) {
+        let parts = inviteEndpoint.split(separator: ":", omittingEmptySubsequences: false)
+        guard parts.count == 2, let port = UInt16(parts[1]), port > 0,
+              let ip = IPv4Address(String(parts[0])) else { return nil }
+        let bytes = Array(ip.rawValue)
+        guard bytes[0] == 10 || (bytes[0] == 172 && (16...31).contains(bytes[1]))
+            || (bytes[0] == 192 && bytes[1] == 168) || (bytes[0] == 169 && bytes[1] == 254) else { return nil }
+        self.init(host: String(parts[0]), port: port)
+    }
+
     var endpoint: NWEndpoint? {
         NWEndpoint.Port(rawValue: port).map { .hostPort(host: NWEndpoint.Host(host), port: $0) }
     }
@@ -84,6 +95,16 @@ public struct SyncClient: Sendable {
         self.name = name
         self.remembered = remembered
         self.endpoints = endpoints ?? { await Discovery.find(group: group) }
+    }
+
+    /// Proves a device in the group is reachable without sending or fetching
+    /// clipboard contents. Used to check pairing independently from syncing.
+    public func connect() async throws -> (Seen, [Address]) {
+        let reached = try await reach { peer in
+            await peer.finish()
+            return true
+        }
+        return (Seen(reached: reached.map(\.name), reports: reached.map(\.reported)), reached.compactMap(\.address))
     }
 
     /// Sends `content` to every device reached. Also returns the addresses that worked.

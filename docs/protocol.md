@@ -68,3 +68,7 @@ Each side's first frame is `hello`. Nothing else is sent until the peer's `hello
 
 - The group key is long-lived, so there's no forward secrecy: anyone who later gets the key can decrypt recorded traffic.
 - A single device can't be removed from a group. Start a new group instead.
+
+## Local addresses in invites
+
+Desktop invites include optional repeated `peer=<IPv4>:<port>` query items alongside the group code. Only private or link-local IPv4 addresses and nonzero ports are accepted. The joining device retains these as direct connection candidates, then falls back to Bonjour if they fail. Each connection still completes the encrypted group handshake before sharing any clipboard data. Older apps ignore these extra query items, and old invites and bare codes still use Bonjour. Hosts regenerate their local addresses when displaying an invite; if DHCP changes addresses and discovery is blocked, scan a fresh invite.

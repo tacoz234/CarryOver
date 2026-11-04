@@ -386,3 +386,26 @@ fn copying_from_history_does_not_send_it_again() {
     // a still has "second": the old clip stayed on b.
     assert_eq!(a.clipboard.current().as_deref(), Some("second"));
 }
+
+#[test]
+fn joined_invite_connects_without_discovery() {
+    use copyblip::config::Config;
+    // Bind a real LAN interface so this exercises the same private-address
+    // invite parser as setup. Neither hub starts a discovery daemon.
+    let Some(ip) = if_addrs::get_if_addrs().unwrap().into_iter().find_map(|interface| {
+        match interface.ip() {
+            std::net::IpAddr::V4(ip) if ip.is_private() && !ip.is_loopback() => Some(ip),
+            _ => None,
+        }
+    }) else { return };
+    let listener = TcpListener::bind((ip, 0)).unwrap();
+    let address = listener.local_addr().unwrap();
+    let server_clipboard = Arc::new(MemoryClipboard::default());
+    let server = Hub::new(KEY, "existing".into(), "Existing Mac".into(), server_clipboard);
+    server.serve(listener);
+    let invite = format!("carryover://join?code={}&peer={address}", hex::encode(KEY));
+    let config = Config::from_invite(&invite).unwrap();
+    let joined = Hub::new(config.key().unwrap(), config.device, "Joined Mac".into(), Arc::new(MemoryClipboard::default()));
+    joined.dial(Arc::new(Mutex::new(config.pairing_addresses)));
+    wait_for("direct invite connection", || server.peer_count() == 1 && joined.peer_count() == 1);
+}

@@ -12,13 +12,17 @@
 		0DA1A777ED4CD8DBA0978CC6 /* SyncModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6679B052FBAE3AD9EFCAC942 /* SyncModel.swift */; };
 		4FBC4F12CAF355A65DDDC119 /* CopyBlipApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2E110FC41425C09F8159F15B /* CopyBlipApp.swift */; };
 		70BDD1CE370D70ED85BD9EEE /* Keychain.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE22F4CEC553AB3EB4D3DBB4 /* Keychain.swift */; };
+		77856B02F1E504ED7063C0A8 /* OnboardingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 63ED2B188A04DBFB25D424C3 /* OnboardingView.swift */; };
+		B4936909074276A9C07D30EA /* InviteScanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4AEF946B514A64CA3EF63979 /* InviteScanner.swift */; };
 		D60D3C1667CDFC60EBD687D1 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = D0590FF036F7C53CFD1B348D /* PrivacyInfo.xcprivacy */; };
 		E7878A2D002896BEBDB4DC52 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 7D9966508A8929BCB153C38A /* Assets.xcassets */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
 		2E110FC41425C09F8159F15B /* CopyBlipApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CopyBlipApp.swift; sourceTree = "<group>"; };
+		4AEF946B514A64CA3EF63979 /* InviteScanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InviteScanner.swift; sourceTree = "<group>"; };
 		4BB526D00EBAE2F051167F18 /* CopyBlipKit */ = {isa = PBXFileReference; lastKnownFileType = folder; name = CopyBlipKit; path = CopyBlipKit; sourceTree = SOURCE_ROOT; };
+		63ED2B188A04DBFB25D424C3 /* OnboardingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingView.swift; sourceTree = "<group>"; };
 		6679B052FBAE3AD9EFCAC942 /* SyncModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncModel.swift; sourceTree = "<group>"; };
 		68B2E57CCA5EA5A88400230C /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		72A628766F79826AE6542DEB /* CopyBlip.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = CopyBlip.app; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -55,7 +59,9 @@
 				68B2E57CCA5EA5A88400230C /* ContentView.swift */,
 				2E110FC41425C09F8159F15B /* CopyBlipApp.swift */,
 				BB8DF4387E601CFC3F39A928 /* Info.plist */,
+				4AEF946B514A64CA3EF63979 /* InviteScanner.swift */,
 				FE22F4CEC553AB3EB4D3DBB4 /* Keychain.swift */,
+				63ED2B188A04DBFB25D424C3 /* OnboardingView.swift */,
 				D0590FF036F7C53CFD1B348D /* PrivacyInfo.xcprivacy */,
 				6679B052FBAE3AD9EFCAC942 /* SyncModel.swift */,
 			);
@@ -158,7 +164,9 @@
 			files = (
 				0481EEED48002D7B26F0A85C /* ContentView.swift in Sources */,
 				4FBC4F12CAF355A65DDDC119 /* CopyBlipApp.swift in Sources */,
+				B4936909074276A9C07D30EA /* InviteScanner.swift in Sources */,
 				70BDD1CE370D70ED85BD9EEE /* Keychain.swift in Sources */,
+				77856B02F1E504ED7063C0A8 /* OnboardingView.swift in Sources */,
 				0DA1A777ED4CD8DBA0978CC6 /* SyncModel.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;

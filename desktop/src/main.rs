@@ -289,7 +289,7 @@ fn main() -> Result<()> {
             eprintln!("Paste the invite link or pairing code, then press Enter:");
             let mut code = String::new();
             std::io::stdin().read_line(&mut code)?;
-            let config = Config::new(&config::parse_invite(&code)?);
+            let config = Config::from_invite(&code)?;
             config.save(&dir, force)?;
             println!("Joined. Start syncing with `copyblip run`.");
         }
@@ -328,6 +328,11 @@ fn main() -> Result<()> {
                 name.unwrap_or_else(device_name),
                 clipboard,
             );
+            if !config.pairing_addresses.is_empty() {
+                hub.dial(Arc::new(std::sync::Mutex::new(
+                    config.pairing_addresses.clone(),
+                )));
+            }
             hub.serve(listener);
             discovery::start(hub.clone(), &key, &config.device, port)?;
             hub.watch_clipboard();

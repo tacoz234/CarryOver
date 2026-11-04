@@ -6,14 +6,20 @@
 #[cfg(target_os = "macos")]
 use anyhow::Context;
 use anyhow::Result;
+use std::path::Path;
 #[cfg(target_os = "macos")]
 use std::path::PathBuf;
 
 #[cfg(target_os = "macos")]
 pub const LABEL: &str = "com.coledeterman.copyblip";
 
+/// Starts this program at login, or stops doing so.
+pub fn set_enabled(enabled: bool) -> Result<()> {
+    set_enabled_for(&std::env::current_exe()?, enabled)
+}
+
 #[cfg(target_os = "macos")]
-fn plist() -> Result<PathBuf> {
+pub fn plist() -> Result<PathBuf> {
     let home = std::env::var_os("HOME").context("no home folder")?;
     Ok(PathBuf::from(home).join(format!("Library/LaunchAgents/{LABEL}.plist")))
 }
@@ -26,7 +32,7 @@ pub fn is_enabled() -> bool {
 /// Starts at login with the menu bar icon. Restarts after a crash or an
 /// update, but Quit keeps it stopped until the next login.
 #[cfg(target_os = "macos")]
-pub fn set_enabled(enabled: bool) -> Result<()> {
+pub fn set_enabled_for(program: &Path, enabled: bool) -> Result<()> {
     let path = plist()?;
     if !enabled {
         if path.exists() {
@@ -34,7 +40,6 @@ pub fn set_enabled(enabled: bool) -> Result<()> {
         }
         return Ok(());
     }
-    let program = std::env::current_exe()?;
     let home = std::env::var("HOME")?;
     let escape = |text: &str| {
         text.replace('&', "&amp;")
@@ -68,7 +73,7 @@ pub fn set_enabled(enabled: bool) -> Result<()> {
 const RUN_KEY: &str = r"HKCU\Software\Microsoft\Windows\CurrentVersion\Run";
 
 #[cfg(windows)]
-fn reg(args: &[&str]) -> Result<bool> {
+pub(crate) fn reg(args: &[&str]) -> Result<bool> {
     use std::os::windows::process::CommandExt;
     const CREATE_NO_WINDOW: u32 = 0x0800_0000;
     let status = std::process::Command::new("reg.exe")
@@ -86,7 +91,7 @@ pub fn is_enabled() -> bool {
 }
 
 #[cfg(windows)]
-pub fn set_enabled(enabled: bool) -> Result<()> {
+pub fn set_enabled_for(program: &Path, enabled: bool) -> Result<()> {
     if !enabled {
         if is_enabled() {
             anyhow::ensure!(
@@ -96,7 +101,6 @@ pub fn set_enabled(enabled: bool) -> Result<()> {
         }
         return Ok(());
     }
-    let program = std::env::current_exe()?;
     let command = format!("\"{}\" run --background --tray", program.display());
     anyhow::ensure!(
         reg(&[

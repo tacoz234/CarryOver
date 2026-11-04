@@ -55,6 +55,13 @@ pub fn run(app: Arc<App>, open_window: bool) -> ! {
     // movement would otherwise wake the loop, which can stall scrolling.
     event_loop.set_device_event_filter(tao::event_loop::DeviceEventFilter::Always);
     let proxy = event_loop.create_proxy();
+    let control_proxy = proxy.clone();
+    if let Err(error) = crate::control::listen(move |command| {
+        let _ = control_proxy.send_event(UserEvent::Control(command));
+    }) {
+        eprintln!("couldn't listen for other launches: {error:#}");
+    }
+    crate::install::note_version();
 
     let mut items = Items {
         menu: Menu::new(),
@@ -96,6 +103,13 @@ pub fn run(app: Arc<App>, open_window: bool) -> ! {
                     open_tab = Some("devices");
                 }
             }
+            Event::UserEvent(UserEvent::Control(command)) => match command {
+                crate::control::Command::Open => open_tab = Some("devices"),
+                crate::control::Command::Quit => {
+                    eprintln!("quit for another launch");
+                    exit = Some(0);
+                }
+            },
             Event::UserEvent(UserEvent::Request(body)) => {
                 let request = serde_json::from_str::<Request>(&body);
                 match request {

@@ -1,3 +1,6 @@
+// A windowed program on Windows, so opening it shows no console. Commands
+// run from a terminal attach to that terminal's console instead.
+#![cfg_attr(windows, windows_subsystem = "windows")]
 use anyhow::{Context, Result, bail};
 use clap::{Parser, Subcommand};
 use copyblip::clipboard::{Clipboard, Content};
@@ -13,8 +16,10 @@ struct Cli {
     /// Where to keep this device's config
     #[arg(long, global = true)]
     config_dir: Option<PathBuf>,
+    /// Without a command, opens Carryover: its setup if this computer isn't
+    /// ready, or else its window.
     #[command(subcommand)]
-    command: Command,
+    command: Option<Command>,
 }
 
 #[derive(Subcommand)]
@@ -66,6 +71,13 @@ enum Command {
         #[arg(long)]
         pasteboard: Option<String>,
     },
+    /// Open the setup wizard, as Carryover-Setup.exe does once it has put
+    /// the program in place
+    #[command(hide = true)]
+    Setup,
+    /// Remove Carryover from this PC, as Settings › Apps › Uninstall does
+    #[command(hide = true)]
+    Uninstall,
     /// For publishing: create the release signing key if missing, and print
     /// its public half
     #[command(hide = true)]
@@ -124,7 +136,8 @@ fn detach_console(log: &std::path::Path) -> Result<()> {
     // Rust looks up the standard error handle on every write, so log lines
     // go to the file from here on. The handle stays open for the process.
     unsafe {
-        FreeConsole()?;
+        // Fails when there's no console, as when opened from Explorer.
+        let _ = FreeConsole();
         SetStdHandle(STD_ERROR_HANDLE, HANDLE(file.into_raw_handle()))?;
     }
     Ok(())
@@ -182,6 +195,16 @@ fn bind(port: u16) -> Result<TcpListener> {
     }
 }
 
+#[cfg(windows)]
+fn device_name() -> String {
+    // Running hostname.exe would flash a console window.
+    std::env::var("COMPUTERNAME")
+        .ok()
+        .filter(|name| !name.is_empty())
+        .unwrap_or_else(|| "device".to_owned())
+}
+
+#[cfg(not(windows))]
 fn device_name() -> String {
     std::process::Command::new("hostname")
         .output()
@@ -192,13 +215,68 @@ fn device_name() -> String {
         .unwrap_or_else(|| "device".to_owned())
 }
 
+/// Opened from Explorer, Finder or the Start menu, with no command.
+#[cfg(any(target_os = "macos", windows))]
+fn launch(dir: PathBuf) -> Result<()> {
+    use copyblip::control::{self, Command};
+    use copyblip::{install, setup};
+    let pair = Config::load(&dir).is_err();
+    let needs_install = install::needed();
+    if pair || needs_install {
+        setup::run(setup::Plan {
+            install: needs_install,
+            pair,
+            dir,
+        });
+    }
+    if control::send(Command::Open) {
+        return Ok(());
+    }
+    // Not running, as after Quit: start it with its window open.
+    let program = std::env::current_exe()?;
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        std::process::Command::new(program)
+            .args(["run", "--background", "--tray", "--window"])
+            .creation_flags(CREATE_NO_WINDOW)
+            .spawn()
+            .context("couldn't start Carryover")?;
+    }
+    #[cfg(target_os = "macos")]
+    install::spawn_mac(&program, &["--window"])?;
+    Ok(())
+}
+
+#[cfg(not(any(target_os = "macos", windows)))]
+fn launch(_dir: PathBuf) -> Result<()> {
+    bail!("choose a command; see --help")
+}
+
+/// Lets output from commands run in a terminal reach it.
+#[cfg(windows)]
+fn attach_console() {
+    use windows::Win32::System::Console::{ATTACH_PARENT_PROCESS, AttachConsole};
+    unsafe {
+        let _ = AttachConsole(ATTACH_PARENT_PROCESS);
+    }
+}
+
 fn main() -> Result<()> {
+    #[cfg(windows)]
+    if std::env::args_os().len() > 1 {
+        attach_console();
+    }
     let cli = Cli::parse();
     let dir = match cli.config_dir {
         Some(dir) => dir,
         None => config::default_dir()?,
     };
-    match cli.command {
+    let Some(command) = cli.command else {
+        return launch(dir);
+    };
+    match command {
         Command::Init { force } => {
             let config = Config::new(&rand::random());
             config.save(&dir, force)?;
@@ -288,6 +366,44 @@ fn main() -> Result<()> {
                     (None, _) => bail!("nothing syncable on the clipboard"),
                 }
             }
+        }
+        #[cfg(any(target_os = "macos", windows))]
+        Command::Setup => copyblip::setup::run(copyblip::setup::Plan {
+            // Adds the shortcut and the Settings › Apps entry, and replaces
+            // any login item from an older install.
+            install: true,
+            pair: Config::load(&dir).is_err(),
+            dir,
+        }),
+        #[cfg(not(any(target_os = "macos", windows)))]
+        Command::Setup => bail!("setup is for macOS and Windows"),
+        Command::Uninstall => {
+            #[cfg(windows)]
+            {
+                let sure = copyblip::setup::message(
+                    "Uninstall Carryover",
+                    "Remove Carryover from this PC?
+
+This PC stays in your group, so                      installing Carryover again picks up where it left off.",
+                    true,
+                );
+                if sure {
+                    match copyblip::install::uninstall() {
+                        Ok(()) => {
+                            copyblip::setup::message(
+                                "Uninstall Carryover",
+                                "Carryover was removed from this PC.",
+                                false,
+                            );
+                        }
+                        Err(error) => copyblip::setup::fail(&format!(
+                            "Couldn't uninstall Carryover: {error:#}"
+                        )),
+                    }
+                }
+            }
+            #[cfg(not(windows))]
+            bail!("uninstall is for Windows. On macOS, drag Carryover to the Trash");
         }
         Command::ReleaseKey { key } => {
             if !key.exists() {

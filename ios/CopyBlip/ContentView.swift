@@ -482,7 +482,7 @@ private struct AddDeviceSheet: View {
                                 .padding(16)
                                 .background(.white, in: RoundedRectangle(cornerRadius: 16))
                         }
-                        Text("On a computer, install Carryover, run setup, choose Join and paste the invite link.")
+                        Text("On a computer, open Carryover's setup, choose I already use Carryover, and paste the invite link.")
                             .multilineTextAlignment(.center)
                         Button(showingLink ? "Hide Link" : "Show Link") { showingLink.toggle() }
                             .buttonStyle(.bordered)

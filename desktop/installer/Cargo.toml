@@ -1,0 +1,25 @@
+[package]
+name = "carryover-setup"
+version = "0.0.0"  # Carryover's version comes from ../Cargo.toml
+edition = "2024"
+license = "GPL-3.0-or-later"
+description = "Unpacks Carryover on Windows and opens its setup"
+publish = false
+
+# Built on its own, after copyblip.exe, which it carries. See
+# scripts/package-windows.sh.
+[workspace]
+
+[[bin]]
+name = "Carryover-Setup"
+path = "src/main.rs"
+
+[target."cfg(windows)".dependencies]
+windows = { version = "0.62.2", features = ["Win32_UI_WindowsAndMessaging"] }
+
+[build-dependencies]
+winresource = "0.1.34"
+
+[profile.release]
+strip = true
+opt-level = "s"

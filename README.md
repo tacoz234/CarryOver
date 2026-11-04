@@ -16,9 +16,20 @@ Early. Text and images, run from a terminal on computers.
 | Windows agent | Runs on Windows 11; the window and updates aren't tested there yet |
 | iPhone app | Runs on a real iPhone; iPhone to Mac confirmed |
 
-## Try it
+## Install
 
-Build from `desktop/` with `cargo build --release`, then:
+Download from the [latest release](https://github.com/tacoz234/CarryOver/releases/latest):
+
+- **Windows:** `Carryover-Setup.exe`. Open it and follow the setup wizard. It installs Carryover just for you, with no administrator needed, adds it to the Start menu and to Settings › Apps (where you can uninstall it), and starts it in the notification area.
+- **Mac:** `Carryover-Mac.dmg`. Open it, drag Carryover to Applications, and open it from there. The setup wizard adds it to the menu bar and, if you like, to your login items. The app isn't notarized yet, so the first time macOS blocks it: open **System Settings › Privacy & Security** and choose **Open Anyway**.
+
+The wizard asks whether this is your first device. If it is, it starts a group and shows a QR code for adding the next one. If not, paste the invite link from a device that already has Carryover (**Add a Device**, then **Show Link**).
+
+For the iPhone, open `ios/CopyBlip.xcodeproj` in Xcode and run it on your phone, then scan the QR code and follow the [setup guide](docs/iphone-setup.md). Opening the app sends your iPhone clipboard if you copied something new, and otherwise gets the latest copy from your other devices. Its main screen shows the devices you sync with and a Recent list of what you sent and received; tap an item to copy it again.
+
+## Build it
+
+Build from `desktop/` with `cargo build --release`. The program also works from a terminal:
 
 ```sh
 copyblip init          # first device, prints a pairing code
@@ -27,11 +38,9 @@ copyblip invite        # shows a QR code to scan with an iPhone
 copyblip run           # on every computer
 ```
 
-For the iPhone, open `ios/CopyBlip.xcodeproj` in Xcode and run it on your phone, then enter the pairing code and follow the [setup guide](docs/iphone-setup.md). Opening the app sends your iPhone clipboard if you copied something new, and otherwise gets the latest copy from your other devices. Its main screen shows the devices you sync with and a Recent list of what you sent and received; tap an item to copy it again.
+To build the installers, run `desktop/scripts/package-windows.sh` (on a Mac with `brew install mingw-w64`, or on a PC with Git for Windows; `package-windows.ps1` runs it from PowerShell) and `desktop/scripts/package-mac.sh` (on a Mac). They write `Carryover-Setup.exe`, `Carryover.app` and `Carryover-Mac.dmg` to `desktop/target`.
 
-On a Mac, `desktop/scripts/install-mac-agent.sh` keeps the agent running as a login item with a menu bar icon, and `uninstall-mac-agent.sh` removes it. The log is in `~/Library/Logs/CopyBlip.log`.
-
-For a PC, `desktop/scripts/package-windows.ps1` (on a PC) or `package-windows.sh` (on a Mac) builds a zip. On the PC, run `setup.cmd` from it. It asks whether to join an existing group, using the invite link from any computer in it (**Add a Device** in its window), or to start a new one, and installs the WebView2 runtime if the PC lacks it. Carryover then appears in the notification area. Pass `-WithGroup` or `--with-group` to build a zip that's already joined to the building computer's group.
+For development on a Mac, `desktop/scripts/install-mac-agent.sh` builds and runs the agent as a login item with a menu bar icon, and `uninstall-mac-agent.sh` removes it. The log is in `~/Library/Logs/CopyBlip.log`; on Windows it's `%APPDATA%\CopyBlip\copyblip.log`.
 
 The menu bar and notification area icons show what's connected and what last synced. **Open Carryover…** in their menu opens the main window (on Windows, clicking the icon does too), which has:
 

@@ -14,6 +14,8 @@ const PAGE: &str = include_str!("window.html");
 #[derive(Debug)]
 pub enum UserEvent {
     Request(String),
+    /// From another launch of Carryover.
+    Control(crate::control::Command),
 }
 
 pub struct Window {
@@ -34,6 +36,7 @@ impl Window {
             .with_title("Carryover")
             .with_inner_size(LogicalSize::new(760.0, 540.0))
             .with_min_inner_size(LogicalSize::new(600.0, 420.0))
+            .with_window_icon(crate::setup::window_icon())
             .build(target)?;
         let webview = WebViewBuilder::new()
             .with_html(PAGE)

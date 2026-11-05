@@ -35,6 +35,8 @@ pub enum Request {
     CopyClip { id: String },
     DeleteClip { id: String },
     ClearHistory,
+    /// Handled by the event loop, which quits once it's done.
+    LeaveGroup,
     OpenLog,
     CheckUpdate,
     InstallUpdate,
@@ -80,9 +82,35 @@ impl App {
             Request::CopyClip { id } => self.hub.copy_again(&id)?,
             Request::DeleteClip { id } => self.hub.history.lock().unwrap().remove(&id),
             Request::ClearHistory => self.hub.history.lock().unwrap().clear(),
+            Request::LeaveGroup => self.leave()?,
             Request::OpenLog => open(&self.log)?,
             Request::CheckUpdate => self.updater.check_now(),
             Request::InstallUpdate => self.updater.install_now(),
+        }
+        Ok(())
+    }
+
+    /// Takes this computer out of its group, as Leave Group on the iPhone
+    /// does: forgets the key, devices and history, and stops opening at
+    /// login, since there's nothing to sync. Then opens setup, so it can join
+    /// a group again. The caller quits.
+    pub fn leave(&self) -> Result<()> {
+        self.hub.history.lock().unwrap().clear();
+        self.hub.leave();
+        autostart::set_enabled(false)?;
+        self.login.store(false, Ordering::Relaxed);
+        for file in ["config.json", "devices.json"] {
+            match std::fs::remove_file(self.dir.join(file)) {
+                Err(error) if error.kind() != std::io::ErrorKind::NotFound => {
+                    return Err(error).with_context(|| format!("couldn't remove {file}"));
+                }
+                _ => {}
+            }
+        }
+        let _ = std::fs::remove_dir_all(self.dir.join("history"));
+        eprintln!("left the group");
+        if let Err(error) = open_setup() {
+            eprintln!("couldn't open setup: {error:#}");
         }
         Ok(())
     }
@@ -153,6 +181,30 @@ pub fn ago(elapsed: Duration) -> String {
     }
 }
 
+/// Opens Carryover with no command, which shows setup when there's no group.
+/// On macOS it goes through Launch Services, since launchd ends what a
+/// login item started when the item quits.
+fn open_setup() -> Result<()> {
+    #[cfg(target_os = "macos")]
+    if let Some(bundle) = crate::install::bundle() {
+        std::process::Command::new("open")
+            .arg("-n")
+            .arg(bundle)
+            .spawn()
+            .context("couldn't open setup")?;
+        return Ok(());
+    }
+    let mut command = std::process::Command::new(std::env::current_exe()?);
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        command.creation_flags(CREATE_NO_WINDOW);
+    }
+    command.spawn().context("couldn't open setup")?;
+    Ok(())
+}
+
 /// Opens a file in its default app.
 pub fn open(path: &std::path::Path) -> Result<()> {
     #[cfg(target_os = "macos")]
@@ -202,6 +254,8 @@ mod tests {
     fn window_requests_parse() {
         let request: Request = serde_json::from_str(r#"{"cmd":"forget","device":"abc"}"#).unwrap();
         assert!(matches!(request, Request::Forget { device } if device == "abc"));
+        let request: Request = serde_json::from_str(r#"{"cmd":"leaveGroup"}"#).unwrap();
+        assert!(matches!(request, Request::LeaveGroup));
         let request: Request = serde_json::from_str(r#"{"cmd":"pause","on":true}"#).unwrap();
         assert!(matches!(request, Request::Pause { on: true }));
         assert!(serde_json::from_str::<Request>(r#"{"cmd":"rm -rf"}"#).is_err());

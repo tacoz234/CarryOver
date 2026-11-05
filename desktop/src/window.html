@@ -99,6 +99,8 @@
   }
   button.btn:hover { background: var(--hover); }
   button.btn.primary { background: var(--accent); border-color: transparent; color: var(--accent-text); }
+  button.btn.danger { color: var(--danger); }
+  button.btn.danger.armed { background: var(--danger); border-color: transparent; color: #fff; }
   button.btn:disabled { opacity: 0.5; cursor: default; }
   button.link { all: unset; color: var(--accent); cursor: pointer; font-size: 13px; }
   button.remove { all: unset; color: var(--muted); cursor: pointer; font-size: 13px; padding: 2px 6px; border-radius: 6px; visibility: hidden; }
@@ -243,6 +245,14 @@
         <div class="grow">Install updates automatically<div class="sub">Carryover restarts itself for a moment to finish.</div></div>
         <span class="switch"><input type="checkbox" id="auto-update"><span></span></span>
       </label>
+    </div>
+
+    <h3>Group</h3>
+    <div class="card">
+      <div class="row">
+        <div class="grow">Leave group<div class="sub">This computer stops syncing and forgets its devices and recent items until you join again.</div></div>
+        <button class="btn danger" id="leave-group">Leave Group</button>
+      </div>
     </div>
 
     <h3>Troubleshooting</h3>
@@ -489,6 +499,32 @@
     button.dataset.armed = "1";
     button.textContent = "Click again to clear";
     clearTimer = setTimeout(() => { delete button.dataset.armed; button.textContent = "Clear All"; }, 3000);
+  };
+  let leaveTimer;
+  $("leave-group").onclick = () => {
+    const button = $("leave-group");
+    if (button.dataset.armed) {
+      clearTimeout(leaveTimer);
+      button.disabled = true;
+      button.textContent = "Leaving…";
+      send("leaveGroup");
+      // Carryover quits once it has left, so still being here means it failed.
+      leaveTimer = setTimeout(() => {
+        delete button.dataset.armed;
+        button.classList.remove("armed");
+        button.disabled = false;
+        button.textContent = "Leave Group";
+      }, 5000);
+      return;
+    }
+    button.dataset.armed = "1";
+    button.classList.add("armed");
+    button.textContent = "Click again to leave";
+    leaveTimer = setTimeout(() => {
+      delete button.dataset.armed;
+      button.classList.remove("armed");
+      button.textContent = "Leave Group";
+    }, 3000);
   };
   send("ready");
 </script>

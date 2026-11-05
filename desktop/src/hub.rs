@@ -237,6 +237,14 @@ impl Hub {
         };
     }
 
+    /// Stops syncing and drops the devices and history it knew, without
+    /// saving anything more to disk.
+    pub fn leave(&self) {
+        self.set_paused(true);
+        *self.devices.lock().unwrap() = Devices::default();
+        *self.history.lock().unwrap() = History::default();
+    }
+
     /// Loads and keeps saving the clip history in `dir`.
     pub fn keep_history(&self, dir: PathBuf) {
         *self.history.lock().unwrap() = History::open(dir);

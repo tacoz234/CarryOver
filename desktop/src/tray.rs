@@ -125,6 +125,15 @@ pub fn run(app: Arc<App>, open_window: bool) -> ! {
                             window.loaded(&app);
                         }
                     }
+                    Ok(Request::LeaveGroup) => match app.handle(Request::LeaveGroup) {
+                        Ok(()) => exit = Some(0),
+                        Err(error) => {
+                            if let Some(window) = &mut window {
+                                window.toast(&format!("Couldn't leave the group: {error:#}"));
+                                window.refresh(&app);
+                            }
+                        }
+                    },
                     Ok(request) => {
                         let saved = match &request {
                             Request::CopyClip { .. } => {

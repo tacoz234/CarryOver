@@ -13,6 +13,8 @@ public final class PeerConnection: @unchecked Sendable {
     private var sealer: Sealer?
     private var opener: Opener?
     public private(set) var peerName = ""
+    /// The computer's device ID, from its hello.
+    public private(set) var peerDevice = ""
     /// The devices the computer last said it knows about.
     public private(set) var reported: [Presence] = []
     /// The resolved address once connected, for dialing directly next time.
@@ -22,19 +24,21 @@ public final class PeerConnection: @unchecked Sendable {
         connection = NWConnection(to: endpoint, using: .tcp)
     }
 
-    /// Connects, handshakes and swaps hellos. Gives up after `timeout`.
-    public func open(group: GroupKey, device: String, name: String, timeout: Duration = .seconds(4)) async throws {
+    /// Connects, handshakes and swaps hellos, telling the computer about
+    /// `devices`. Gives up after `timeout`.
+    public func open(group: GroupKey, device: String, name: String, devices: [Presence] = [], timeout: Duration = .seconds(4)) async throws {
         try await withTimeout(timeout) { [self] in
             try await waitUntilReady()
             let nonce = Handshake.newNonce()
             try await write(Handshake.hello(nonce: nonce))
             let peerHello = try await read(exactly: Handshake.helloLength)
             (sealer, opener) = try Handshake.keys(group: group, ourNonce: nonce, peerHello: peerHello, role: .initiator)
-            try await send(.hello(device: device, name: name))
+            try await send(.hello(device: device, name: name, devices: devices))
             // Nothing is shared until the peer proves it holds the group key.
-            guard case let .hello(_, peerName, devices) = try await receive() else {
+            guard case let .hello(peerDevice, peerName, devices) = try await receive() else {
                 throw ProtocolError.unexpectedMessage
             }
+            self.peerDevice = peerDevice
             self.peerName = peerName
             reported = devices
             if case let .hostPort(host, port)? = connection.currentPath?.remoteEndpoint {

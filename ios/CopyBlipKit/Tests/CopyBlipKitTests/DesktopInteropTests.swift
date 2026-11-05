@@ -51,6 +51,19 @@ struct DesktopInteropTests {
         #expect(seen.devices.contains { $0.connected && $0.device != "test-phone" })
     }
 
+    @Test func computersLearnDevicesThePhoneKnows() async throws {
+        // A computer that's off, which only the phone has met.
+        let pc = Presence(device: "offline-pc", name: "Offline PC", connected: false, lastSeen: Date(timeIntervalSince1970: 1_700_000_000))
+        let endpoint = NWEndpoint.hostPort(host: "127.0.0.1", port: NWEndpoint.Port(rawValue: setup.ports[0])!)
+        let phone = SyncClient(group: setup.key, device: "phone-with-list", name: "Phone With List", known: [pc], endpoints: { [endpoint] })
+        _ = try await phone.connect()
+        let (seen, _) = try await setup.client(ports: [setup.ports[0]]).connect()
+        let reported = try #require(seen.devices.first { $0.device == "offline-pc" })
+        #expect(reported.name == "Offline PC")
+        #expect(!reported.connected)
+        #expect(seen.reachedIDs.values.allSatisfy { !$0.isEmpty })
+    }
+
     @Test func latestReturnsWhatWasJustSent() async throws {
         let text = "round trip ✅ \(UUID())"
         let (sent, _) = try await setup.client(ports: [setup.ports[0]]).send(.text(text))

@@ -57,7 +57,7 @@ Each side's first frame is `hello`. Nothing else is sent until the peer's `hello
 - The most recent clip to arrive wins. Device clocks aren't used, so a wrong clock can't block a device.
 - Nothing is sent on startup or connect, only after a new copy.
 - `latest` asks for the most recent clip, which is sent back to the asker only, with its original ID. The iPhone app sends this when opened. If nothing has been copied yet, there's no reply.
-- Computers send their known devices in `hello`, and send `devices` to every connection whenever one of their own connections starts or ends. A device counts as online if it's connected directly, or if a directly connected computer reports it as connected. Only direct reports count, so peers can't keep a departed device online by repeating each other. The iPhone sends no list.
+- Computers send their known devices in `hello`, and send `devices` to every connection whenever one of their own connections starts or ends. A device counts as online if it's connected directly, or if a directly connected computer reports it as connected. Only direct reports count, so peers can't keep a departed device online by repeating each other. The iPhone sends the devices it knows about in its `hello`, all marked not connected, so a computer that joined through the iPhone learns the rest of the group even while they're off.
 - Pings go out after 15 seconds of silence, and a connection is dropped after 45 seconds without a frame.
 
 ## Invite links

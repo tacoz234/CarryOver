@@ -29,6 +29,9 @@ final class SyncModel {
         /// As the device reports it, such as coles-Mac-Mini.local.
         let name: String
         var lastSeen: Date
+        /// Its device ID, which computers need to add it to their lists.
+        /// Missing from lists saved by older versions until it's seen again.
+        var device: String?
         var id: String { name }
     }
 
@@ -280,8 +283,9 @@ final class SyncModel {
     private func record(_ direction: HistoryItem.Direction, _ content: Content, id: String, peers: [String]) {
         let now = Date()
         for name in peers {
+            let id = devices.first { $0.name == name }?.device
             devices.removeAll { $0.name == name }
-            devices.insert(Device(name: name, lastSeen: now), at: 0)
+            devices.insert(Device(name: name, lastSeen: now, device: id), at: 0)
         }
         var text: String?
         switch content {
@@ -467,7 +471,15 @@ final class SyncModel {
     }
 
     private var client: SyncClient? {
-        group.map { SyncClient(group: $0, device: device, name: UIDevice.current.name, remembered: addresses) }
+        group.map { SyncClient(group: $0, device: device, name: UIDevice.current.name, remembered: addresses, known: known) }
+    }
+
+    /// The devices this iPhone knows about, as told to computers. It isn't
+    /// connected to any of them between syncs.
+    private var known: [Presence] {
+        devices.compactMap { item in
+            item.device.map { Presence(device: $0, name: item.name, connected: false, lastSeen: item.lastSeen) }
+        }
     }
 
     /// Updates who's online, and adds devices the computers know about that
@@ -479,15 +491,17 @@ final class SyncModel {
         let now = Date()
         var merged = devices
         for name in seen.reached {
+            let id = seen.reachedIDs[name] ?? merged.first { $0.name == name }?.device
             merged.removeAll { $0.name == name }
-            merged.append(Device(name: name, lastSeen: now))
+            merged.append(Device(name: name, lastSeen: now, device: id))
         }
         for report in others {
             let lastSeen = report.connected ? now : report.lastSeen
             if let index = merged.firstIndex(where: { $0.name == report.name }) {
                 merged[index].lastSeen = max(merged[index].lastSeen, lastSeen)
+                merged[index].device = merged[index].device ?? report.device
             } else {
-                merged.append(Device(name: report.name, lastSeen: lastSeen))
+                merged.append(Device(name: report.name, lastSeen: lastSeen, device: report.device))
             }
         }
         merged.sort { $0.lastSeen > $1.lastSeen }

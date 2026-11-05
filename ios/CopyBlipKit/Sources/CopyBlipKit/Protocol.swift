@@ -42,7 +42,7 @@ public struct Presence: Codable, Equatable, Sendable {
 }
 
 public enum Message: Equatable, Sendable {
-    /// Computers list the devices they know about. The phone sends none.
+    /// Each side lists the other devices it knows about.
     case hello(device: String, name: String, devices: [Presence] = [])
     case clip(id: String, text: String)
     case image(id: String, png: Data)

@@ -20,9 +20,12 @@ public struct Seen: Equatable, Sendable {
     /// The devices those computers know about, one entry each. Connected if
     /// any of them is connected to it.
     public let devices: [Presence]
+    /// Device IDs of the computers reached, by name.
+    public let reachedIDs: [String: String]
 
-    init(reached: [String], reports: [[Presence]]) {
+    init(reached: [String], reports: [[Presence]], reachedIDs: [String: String] = [:]) {
         self.reached = reached
+        self.reachedIDs = reachedIDs
         var merged: [String: Presence] = [:]
         for report in reports.joined() {
             guard let existing = merged[report.device] else {
@@ -37,6 +40,14 @@ public struct Seen: Equatable, Sendable {
             )
         }
         devices = merged.values.sorted { $0.name < $1.name }
+    }
+
+    init<T>(_ reached: [SyncClient.Reached<T>]) {
+        self.init(
+            reached: reached.map(\.name),
+            reports: reached.map(\.reported),
+            reachedIDs: Dictionary(reached.map { ($0.name, $0.device) }, uniquingKeysWith: { first, _ in first })
+        )
     }
 
     /// Whether `name` answered, or is connected to a computer that did.
@@ -79,6 +90,9 @@ public struct SyncClient: Sendable {
     let device: String
     let name: String
     let remembered: [Address]
+    /// The devices this iPhone knows about, told to each computer it reaches
+    /// so a computer that joined through the iPhone learns the whole group.
+    let known: [Presence]
     let endpoints: EndpointSource
 
     /// `remembered` holds addresses that worked last time, tried before
@@ -88,12 +102,14 @@ public struct SyncClient: Sendable {
         device: String,
         name: String,
         remembered: [Address] = [],
+        known: [Presence] = [],
         endpoints: EndpointSource? = nil
     ) {
         self.group = group
         self.device = device
         self.name = name
         self.remembered = remembered
+        self.known = known
         self.endpoints = endpoints ?? { await Discovery.find(group: group) }
     }
 
@@ -104,7 +120,7 @@ public struct SyncClient: Sendable {
             await peer.finish()
             return true
         }
-        return (Seen(reached: reached.map(\.name), reports: reached.map(\.reported)), reached.compactMap(\.address))
+        return (Seen(reached), reached.compactMap(\.address))
     }
 
     /// Sends `content` to every device reached. Also returns the addresses that worked.
@@ -120,7 +136,7 @@ public struct SyncClient: Sendable {
             await peer.finish()
             return true
         }
-        let seen = Seen(reached: reached.map(\.name), reports: reached.map(\.reported))
+        let seen = Seen(reached)
         return (Sent(id: id, to: reached.map(\.name), seen: seen), reached.compactMap(\.address))
     }
 
@@ -137,13 +153,14 @@ public struct SyncClient: Sendable {
             }
         }
         // Devices in a group hold the same latest clip, so the first answer will do.
-        let seen = Seen(reached: reached.map(\.name), reports: reached.map(\.reported))
+        let seen = Seen(reached)
         return (reached.lazy.compactMap(\.value).first, reached.compactMap(\.address), seen)
     }
 
     struct Reached<T: Sendable>: Sendable {
         let value: T
         let name: String
+        let device: String
         let address: Address?
         let reported: [Presence]
     }
@@ -199,9 +216,9 @@ public struct SyncClient: Sendable {
                     let peer = PeerConnection(endpoint: target)
                     defer { peer.close() }
                     do {
-                        try await peer.open(group: group, device: device, name: name, timeout: timeout)
+                        try await peer.open(group: group, device: device, name: name, devices: known, timeout: timeout)
                         let value = try await body(peer)
-                        return .success(Reached(value: value, name: peer.peerName, address: peer.address, reported: peer.reported))
+                        return .success(Reached(value: value, name: peer.peerName, device: peer.peerDevice, address: peer.address, reported: peer.reported))
                     } catch {
                         return .failure(error)
                     }

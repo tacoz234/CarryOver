@@ -36,3 +36,9 @@ This builds the Mac and Windows programs and their installers (`Carryover-Setup.
 ## The release key
 
 The private key is at `~/.config/copyblip/release-signing-key`, outside the repo. **Back it up somewhere safe.** If it's lost, installed copies can't verify new releases, and each computer needs reinstalling by hand with a build that has a new key. If it leaks, anyone could ship an update, so rotate it the same way.
+
+## Windows release smoke test
+
+On Windows, `desktop/scripts/package-windows.ps1` builds the program and installer natively using the installed Windows Rust host target (MSVC or GNU). It does not require `sh` or Git Bash on PATH. Both builds use their lockfiles, and packaging restores any pre-existing `CARRYOVER_EXE` / `CARRYOVER_LOADER` environment values afterwards.
+
+For an automatic-update smoke test, transfer a signed test feed from the release-key machine, serve it on localhost, and set `COPYBLIP_UPDATE_FEED` only for the test process. The test feed must contain an actually newer program version. Afterwards stop the test process, clear the override, and rerun the 0.4.0 installer to restore the release candidate while keeping pairing and history. Never publish the test version or replace the release key to make a test pass.

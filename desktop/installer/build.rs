@@ -4,7 +4,7 @@ fn main() {
     for var in ["CARRYOVER_EXE", "CARRYOVER_LOADER"] {
         println!("cargo:rerun-if-env-changed={var}");
         let path = std::env::var(var).unwrap_or_else(|_| {
-            panic!("set {var}; build this with scripts/package-windows.sh")
+            panic!("set {var}; build this with scripts/package-windows.ps1 or scripts/package-windows.sh")
         });
         println!("cargo:rerun-if-changed={path}");
     }

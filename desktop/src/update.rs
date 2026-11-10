@@ -68,6 +68,8 @@ pub fn platform() -> &'static str {
         ("macos", "x86_64") => "macos-x86_64",
         ("windows", "x86_64") => "windows-x86_64",
         ("windows", "aarch64") => "windows-aarch64",
+        ("linux", "x86_64") => "linux-x86_64",
+        ("linux", "aarch64") => "linux-aarch64",
         _ => "unsupported",
     }
 }
@@ -164,21 +166,28 @@ fn get(url: &str, limit: u64) -> Result<Vec<u8>> {
 
 /// Returns a newer release for this platform, if there is one.
 pub fn check() -> Result<Option<Release>> {
-    let feed = feed();
+    check_at(&feed(), &public_key()?)
+}
+
+fn check_at(feed: &str, key: &VerifyingKey) -> Result<Option<Release>> {
     let manifest = get(&format!("{feed}/{MANIFEST}"), MAX_MANIFEST)?;
     let signature = get(&format!("{feed}/{MANIFEST}.sig"), 1024)?;
-    let manifest = verify(&manifest, &signature, &public_key()?)?;
+    let manifest = verify(&manifest, &signature, key)?;
     Ok(release_for(manifest, VERSION, platform()))
 }
 
 /// Downloads the release's program and checks it against the signed manifest.
 pub fn download(release: &Release) -> Result<Vec<u8>> {
+    download_at(release, &feed())
+}
+
+fn download_at(release: &Release, feed: &str) -> Result<Vec<u8>> {
     let program = &release.program;
     ensure!(
         !program.name.contains(['/', '\\']) && !program.name.starts_with('.'),
         "update file name is unsafe"
     );
-    let bytes = get(&format!("{}/{}", feed(), program.name), MAX_PROGRAM)?;
+    let bytes = get(&format!("{feed}/{}", program.name), MAX_PROGRAM)?;
     ensure!(
         bytes.len() as u64 == program.size,
         "update download is the wrong size"
@@ -364,8 +373,15 @@ pub fn relaunch() -> Result<i32> {
     if std::env::var("XPC_SERVICE_NAME").as_deref() == Ok(crate::autostart::LABEL) {
         return Ok(75);
     }
-    let mut command = std::process::Command::new(std::env::current_exe()?);
-    command.args(std::env::args_os().skip(1));
+    spawn_updated(
+        &std::env::current_exe()?,
+        &std::env::args_os().skip(1).collect::<Vec<_>>(),
+    )
+}
+
+fn spawn_updated(program: &Path, arguments: &[std::ffi::OsString]) -> Result<i32> {
+    let mut command = std::process::Command::new(program);
+    command.args(arguments);
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;
@@ -685,5 +701,102 @@ mod tests {
                 .starts_with("copyblip ")
         );
         std::fs::remove_dir_all(bundle.parent().unwrap()).unwrap();
+    }
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn linux_signed_feed_download_replace_and_restart() {
+        use std::io::{BufRead, BufReader, Write};
+        use std::net::TcpListener;
+        use std::time::Instant;
+        let dir = std::env::temp_dir().join(format!("carryover-update-{}", rand::random::<u64>()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let marker = dir.join("restarted");
+        let program = format!(
+            "#!/bin/sh\nprintf '%s\\n' \"$@\" > '{}'\n",
+            marker.display()
+        )
+        .into_bytes();
+        let secret = [17; 32];
+        let key = SigningKey::from_bytes(&secret).verifying_key();
+        let manifest = serde_json::to_vec(&Manifest {
+            version: "99.0.0".into(),
+            notes: "Linux update fixture".into(),
+            files: BTreeMap::from([(
+                platform().into(),
+                Program {
+                    name: "copyblip-linux-test".into(),
+                    size: program.len() as u64,
+                    sha256: hex::encode(Sha256::digest(&program)),
+                },
+            )]),
+        })
+        .unwrap();
+        for corrupt in [false, true] {
+            let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+            let feed = format!("http://{}", listener.local_addr().unwrap());
+            let files = BTreeMap::from([
+                ("/manifest.json".to_owned(), manifest.clone()),
+                (
+                    "/manifest.json.sig".to_owned(),
+                    sign(&manifest, &secret).into_bytes(),
+                ),
+                (
+                    "/copyblip-linux-test".to_owned(),
+                    if corrupt {
+                        vec![0; program.len()]
+                    } else {
+                        program.clone()
+                    },
+                ),
+            ]);
+            let server = std::thread::spawn(move || {
+                for _ in 0..3 {
+                    let (mut stream, _) = listener.accept().unwrap();
+                    stream
+                        .set_read_timeout(Some(Duration::from_secs(3)))
+                        .unwrap();
+                    let mut request = String::new();
+                    BufReader::new(&stream).read_line(&mut request).unwrap();
+                    let path = request.split_whitespace().nth(1).unwrap();
+                    let bytes = &files[path];
+                    write!(
+                        stream,
+                        "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                        bytes.len()
+                    )
+                    .unwrap();
+                    stream.write_all(bytes).unwrap();
+                }
+            });
+            let release = check_at(&feed, &key).unwrap().unwrap();
+            assert_eq!(release.version, "99.0.0");
+            let download = download_at(&release, &feed);
+            server.join().unwrap();
+            let path = dir.join("copyblip");
+            if corrupt {
+                assert!(download.is_err());
+                assert_eq!(std::fs::read(&path).unwrap(), program);
+                continue;
+            }
+            std::fs::write(&path, b"old executable").unwrap();
+            replace(&path, &download.unwrap()).unwrap();
+            assert_eq!(
+                spawn_updated(
+                    &path,
+                    &["--config-dir".into(), "profile with spaces".into()]
+                )
+                .unwrap(),
+                0
+            );
+            let deadline = Instant::now() + Duration::from_secs(3);
+            while !marker.exists() && Instant::now() < deadline {
+                std::thread::sleep(Duration::from_millis(10));
+            }
+            assert_eq!(
+                std::fs::read_to_string(&marker).unwrap(),
+                "--config-dir\nprofile with spaces\n"
+            );
+        }
+        std::fs::remove_dir_all(dir).unwrap();
     }
 }

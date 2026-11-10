@@ -1,0 +1,38 @@
+name: Linux
+on: [push, pull_request]
+jobs:
+  linux:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install native dependencies
+        run: sudo apt-get update && sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev libayatana-appindicator3-dev libdbus-1-dev xclip xvfb xauth dbus-x11 openbox xdotool at-spi2-core python3-pyatspi sway wl-clipboard
+      - run: cargo test --locked
+        working-directory: desktop
+      - run: xvfb-run -a env -u WAYLAND_DISPLAY cargo test --locked --lib clipboard::linux::tests::real_clipboard -- --ignored
+        working-directory: desktop
+      - run: cargo build --locked
+        working-directory: desktop
+      - name: Exercise the X11 clipboard
+        run: xvfb-run -a desktop/scripts/test-linux-clipboard.sh desktop/target/debug/copyblip
+      - name: Exercise two real agents and independent clipboards
+        run: python3 scripts/test-linux-sync.py target/debug/copyblip
+        working-directory: desktop
+      - name: Exercise the desktop UI and lifecycle
+        run: scripts/test-linux-desktop.sh target/debug/copyblip
+        working-directory: desktop
+      - name: Exercise native Wayland clipboard
+        run: python3 scripts/test-linux-wayland.py target/debug/copyblip
+        working-directory: desktop
+  windows-build:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-gnu
+      - name: Install Windows cross compiler
+        run: sudo apt-get update && sudo apt-get install -y gcc-mingw-w64-x86-64-posix binutils-mingw-w64-x86-64
+      - run: cargo check --locked --target x86_64-pc-windows-gnu
+        working-directory: desktop

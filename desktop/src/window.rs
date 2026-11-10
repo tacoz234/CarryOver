@@ -15,8 +15,13 @@ const PAGE: &str = include_str!("window.html");
 pub enum UserEvent {
     Request(String),
     /// From the notification area panel (Windows).
-    #[cfg_attr(not(windows), allow(dead_code))]
+    #[cfg(any(windows, target_os = "linux"))]
     Panel(String),
+    #[cfg(target_os = "linux")]
+    TrayActivate {
+        x: i32,
+        y: i32,
+    },
     /// From another launch of Carryover.
     Control(crate::control::Command),
 }
@@ -41,13 +46,13 @@ impl Window {
             .with_min_inner_size(LogicalSize::new(600.0, 420.0))
             .with_window_icon(crate::setup::window_icon())
             .build(target)?;
-        let webview = WebViewBuilder::new()
+        let builder = WebViewBuilder::new()
             .with_html(PAGE)
             .with_devtools(cfg!(debug_assertions))
             .with_ipc_handler(move |request| {
                 let _ = proxy.send_event(UserEvent::Request(request.into_body()));
-            })
-            .build(&window)?;
+            });
+        let webview = build_webview(builder, &window)?;
         Ok(Self {
             window,
             webview,
@@ -160,4 +165,19 @@ mod tests {
         // The top-left finder pattern starts right after the quiet zone.
         assert!(svg.contains("M4 4h1v1h-1z"));
     }
+}
+
+/// Use GTK's container on Linux so the web view works on Wayland as well as X11.
+pub(crate) fn build_webview<'a>(
+    builder: WebViewBuilder<'a>,
+    window: &'a TaoWindow,
+) -> wry::Result<WebView> {
+    #[cfg(target_os = "linux")]
+    {
+        use tao::platform::unix::WindowExtUnix;
+        use wry::WebViewBuilderExtUnix;
+        builder.build_gtk(window.default_vbox().expect("window has a default GTK box"))
+    }
+    #[cfg(not(target_os = "linux"))]
+    builder.build(window)
 }

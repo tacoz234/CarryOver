@@ -15,6 +15,10 @@ use std::time::{Duration, Instant};
 /// Whether this copy still needs installing before it can run, as when
 /// it's a download that was just double-clicked.
 pub fn needed() -> bool {
+    #[cfg(target_os = "linux")]
+    {
+        crate::linux_install::needed()
+    }
     #[cfg(windows)]
     {
         let (Ok(current), Ok(installed)) = (std::env::current_exe(), program()) else {
@@ -40,6 +44,10 @@ pub fn program() -> Result<PathBuf> {
     {
         let base = std::env::var_os("LOCALAPPDATA").context("no LOCALAPPDATA folder")?;
         Ok(PathBuf::from(base).join("CopyBlip").join("copyblip.exe"))
+    }
+    #[cfg(target_os = "linux")]
+    {
+        crate::linux_install::program()
     }
     #[cfg(target_os = "macos")]
     {
@@ -76,6 +84,8 @@ pub fn stop_running() {
 pub fn install() -> Result<PathBuf> {
     stop_running();
     let target = program()?;
+    #[cfg(target_os = "linux")]
+    crate::linux_install::install_from(&std::env::current_exe()?)?;
     #[cfg(windows)]
     {
         let current = std::env::current_exe()?;
@@ -189,14 +199,28 @@ fn register(program: &Path) -> Result<()> {
         ("Publisher", "REG_SZ", "Carryover".into()),
         ("DisplayIcon", "REG_SZ", format!("{program_text},0")),
         ("InstallLocation", "REG_SZ", folder),
-        ("UninstallString", "REG_SZ", format!("\"{program_text}\" uninstall")),
+        (
+            "UninstallString",
+            "REG_SZ",
+            format!("\"{program_text}\" uninstall"),
+        ),
         ("NoModify", "REG_DWORD", "1".into()),
         ("NoRepair", "REG_DWORD", "1".into()),
         ("EstimatedSize", "REG_DWORD", size_kb.to_string()),
     ];
     for (name, kind, data) in values {
         anyhow::ensure!(
-            autostart::reg(&["add", UNINSTALL_KEY, "/v", name, "/t", kind, "/d", &data, "/f"])?,
+            autostart::reg(&[
+                "add",
+                UNINSTALL_KEY,
+                "/v",
+                name,
+                "/t",
+                kind,
+                "/d",
+                &data,
+                "/f"
+            ])?,
             "couldn't add Carryover to Settings › Apps"
         );
     }
@@ -225,6 +249,8 @@ pub fn note_version() {
 /// apart from this process.
 pub fn start(program: &Path, login: bool) -> Result<()> {
     autostart::set_enabled_for(program, login)?;
+    #[cfg(target_os = "linux")]
+    spawn_linux(program, &[])?;
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;
@@ -316,8 +342,7 @@ pub fn in_applications() -> bool {
         return true;
     };
     let home_apps = std::env::var_os("HOME").map(|home| PathBuf::from(home).join("Applications"));
-    bundle.starts_with("/Applications")
-        || home_apps.is_some_and(|apps| bundle.starts_with(apps))
+    bundle.starts_with("/Applications") || home_apps.is_some_and(|apps| bundle.starts_with(apps))
 }
 
 /// Copies the app into Applications and opens the copy. The caller exits.
@@ -373,5 +398,42 @@ pub fn uninstall() -> Result<()> {
             "/c for /l %i in (1,1,30) do (ping -n 2 127.0.0.1 >nul & rmdir /s /q \"{folder}\" 2>nul & if not exist \"{folder}\" exit)"
         ))
         .spawn()?;
+    Ok(())
+}
+
+/// Starts a Linux desktop process with its output in the config folder.
+#[cfg(target_os = "linux")]
+pub fn spawn_linux(program: &Path, extra: &[&str]) -> Result<()> {
+    spawn_linux_in(program, &crate::config::default_dir()?, extra)
+}
+
+#[cfg(target_os = "linux")]
+pub fn spawn_linux_in(program: &Path, dir: &Path, extra: &[&str]) -> Result<()> {
+    spawn_linux_run(program, dir, true, extra)
+}
+
+#[cfg(target_os = "linux")]
+pub fn spawn_linux_run(program: &Path, dir: &Path, tray: bool, extra: &[&str]) -> Result<()> {
+    use std::os::unix::process::CommandExt;
+    std::fs::create_dir_all(&dir)?;
+    let log = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(dir.join("copyblip.log"))?;
+    let mut command = std::process::Command::new(program);
+    command.arg("run");
+    if tray {
+        command.arg("--tray");
+    }
+    command
+        .process_group(0)
+        .arg("--config-dir")
+        .arg(dir)
+        .args(extra)
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(log)
+        .spawn()
+        .context("couldn't start Carryover")?;
     Ok(())
 }

@@ -4,6 +4,8 @@ use std::sync::Mutex;
 
 #[cfg(any(windows, test))]
 pub mod dib;
+#[cfg(target_os = "linux")]
+pub mod linux;
 #[cfg(target_os = "macos")]
 pub mod macos;
 #[cfg(windows)]
@@ -49,8 +51,8 @@ impl Content {
 }
 
 pub trait Clipboard: Send + Sync {
-    /// Cheap value that changes with the clipboard. Must not read its contents,
-    /// because a read is what triggers the macOS privacy alert.
+    /// Value that changes with the clipboard. On macOS this must not read its
+    /// contents, because a read triggers the privacy alert.
     fn change_token(&self) -> u64;
     /// `None` when there's nothing syncable or the owner marked it as not for syncing.
     fn read(&self) -> Result<Option<Content>>;

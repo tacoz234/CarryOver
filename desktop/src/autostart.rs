@@ -111,3 +111,66 @@ pub fn set_enabled_for(program: &Path, enabled: bool) -> Result<()> {
     );
     Ok(())
 }
+
+#[cfg(target_os = "linux")]
+fn desktop_file() -> Result<std::path::PathBuf> {
+    use anyhow::Context;
+    Ok(crate::config::default_dir()?
+        .parent()
+        .context("no config folder")?
+        .join("autostart/com.coledeterman.carryover.desktop"))
+}
+
+#[cfg(target_os = "linux")]
+pub fn is_enabled() -> bool {
+    desktop_file().is_ok_and(|path| path.exists())
+}
+
+#[cfg(target_os = "linux")]
+pub fn set_enabled_for(program: &Path, enabled: bool) -> Result<()> {
+    set_enabled_for_in(program, enabled, &crate::config::default_dir()?)
+}
+
+#[cfg(target_os = "linux")]
+pub fn set_enabled_for_in(program: &Path, enabled: bool, dir: &Path) -> Result<()> {
+    let path = desktop_file()?;
+    if !enabled {
+        match std::fs::remove_file(path) {
+            Ok(()) => return Ok(()),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+            Err(error) => return Err(error.into()),
+        }
+    }
+    std::fs::create_dir_all(path.parent().unwrap())?;
+    let program = crate::linux_install::exec_argument(program)?;
+    let dir = crate::linux_install::exec_argument(dir)?;
+    std::fs::write(
+        path,
+        format!(
+            "[Desktop Entry]\nType=Application\nName=Carryover\nExec={program} run --tray --config-dir {dir}\nTerminal=false\nX-GNOME-Autostart-enabled=true\n"
+        ),
+    )?;
+    Ok(())
+}
+
+#[cfg(all(test, target_os = "linux"))]
+fn desktop_entry(program: &Path) -> Result<String> {
+    Ok(format!(
+        "Exec={} run --tray",
+        crate::linux_install::exec_argument(program)?
+    ))
+}
+
+#[cfg(all(test, target_os = "linux"))]
+mod linux_tests {
+    use super::*;
+
+    #[test]
+    fn desktop_exec_quotes_paths_and_escapes_field_codes() {
+        let entry = desktop_entry(Path::new("/home/test/My Apps/100%/copyblip")).unwrap();
+        assert!(entry.contains("Exec=\"/home/test/My Apps/100%%/copyblip\" run --tray"));
+        let entry = desktop_entry(Path::new("/tmp/$a`b\"c\\d")).unwrap();
+        assert!(entry.contains(r#"Exec="/tmp/\\$a\\`b\\"c\\\\d" run --tray"#));
+        assert!(desktop_entry(Path::new("/tmp/bad\npath")).is_err());
+    }
+}

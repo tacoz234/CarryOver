@@ -139,7 +139,7 @@
     <div class="choices">
       <button class="choice" data-choice="join">
         <div class="radio"></div>
-        <div><b>I already use Carryover</b><span>Join the group from your Mac, PC or iPhone.</span></div>
+        <div><b>I already use Carryover</b><span>Join the group from your computer or iPhone.</span></div>
       </button>
       <button class="choice" data-choice="new">
         <div class="radio"></div>
@@ -215,7 +215,8 @@
 
   window.init = (info) => {
     setup = info;
-    const windows = info.platform === "windows";
+    const windows = info.platform === "windows" || info.platform === "linux";
+    const computer = info.platform === "macos" ? "Mac" : "computer";
     $("logo").src = info.icon;
     $("version").textContent = "Version " + info.version;
     $("move").hidden = !info.needsMove;
@@ -224,7 +225,7 @@
       $("welcome-title").textContent = windows ? "Install Carryover" : "Finish Installing Carryover";
       $("welcome-text").textContent = windows
         ? "This PC is already in a Carryover group, so it keeps syncing with your devices."
-        : "This Mac is already in a Carryover group. Carryover will start from this copy from now on.";
+        : "This " + computer + " is already in a Carryover group. Carryover will start from this copy from now on.";
       $("welcome-next").textContent = "Install";
     } else if (windows && info.install) {
       $("welcome-next").textContent = "Continue";
@@ -235,15 +236,17 @@
 
   window.done = (result) => {
     link = result.link;
-    const windows = setup.platform === "windows";
+    const windows = setup.platform === "windows" || setup.platform === "linux";
     $("done-text").textContent = result.joined
-      ? "This " + (windows ? "PC" : "Mac") + " joined your group. Copy something on one device and paste it on another."
+      ? "This " + (setup.platform === "macos" ? "Mac" : "computer") + " joined your group. Copy something on one device and paste it on another."
       : result.newGroup
         ? "Your group is ready. Add another device to start syncing."
         : "Carryover is installed and running.";
     $("invite-card").hidden = !result.newGroup;
     $("qr").innerHTML = result.qr;
-    $("tray-hint").innerHTML = windows
+    $("tray-hint").innerHTML = setup.platform === "linux"
+      ? "<b>Carryover runs in the system tray.</b><div class='muted small'>Click its icon to open the panel with your devices, pause switch, updates, and settings. If your desktop has no tray, open Carryover again to show its window.</div>"
+      : windows
       ? "<b>Carryover runs in the notification area.</b><div class='muted small'>Look for its icon by the clock. Windows may tuck it under the <b>^</b> arrow, and you can drag it out to keep it in view. You can also open Carryover from the Start menu.</div>"
       : "<b>Carryover runs in the menu bar.</b><div class='muted small'>Look for its clipboard icon at the top right of the screen. You can also open Carryover from Applications.</div>";
     show("done");
@@ -264,7 +267,7 @@
     showError("welcome", "");
     showError("pair", "");
     const invite = choice === "join" ? $("invite").value.trim() : null;
-    $("working-text").textContent = setup.install && setup.platform === "windows"
+    $("working-text").textContent = setup.install && (setup.platform === "windows" || setup.platform === "linux")
       ? "Installing Carryover…" : "Setting up Carryover…";
     show("working");
     send({ cmd: "finish", invite, login: $("login").checked });
@@ -273,7 +276,7 @@
   function updatePairButton() {
     const ready = choice === "new" || (choice === "join" && $("invite").value.trim() !== "");
     $("pair-next").disabled = !ready;
-    $("pair-next").textContent = setup && setup.install && setup.platform === "windows" ? "Install" : "Set Up";
+    $("pair-next").textContent = setup && setup.install && (setup.platform === "windows" || setup.platform === "linux") ? "Install" : "Set Up";
   }
 
   $("welcome-next").onclick = () => {

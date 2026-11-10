@@ -1,19 +1,28 @@
 //! The menu bar icon on macOS and the notification area icon on Windows, and
 //! the event loop that also runs the main window.
-use crate::app::{App, Request, ago};
+#[cfg(not(target_os = "linux"))]
+use crate::app::ago;
+use crate::app::{App, Request};
+#[cfg(not(target_os = "linux"))]
 use crate::avatar::{self, Kind};
-use crate::hub::{DeviceStatus, Status};
+#[cfg(not(target_os = "linux"))]
+use crate::hub::DeviceStatus;
+use crate::hub::Status;
 use crate::update::{self, State};
 use crate::window::{UserEvent, Window};
+#[cfg(not(target_os = "linux"))]
 use anyhow::Result;
+#[cfg(not(target_os = "linux"))]
 use image::ImageFormat;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tao::event::{Event, StartCause, WindowEvent};
 use tao::event_loop::{ControlFlow, EventLoopBuilder};
-use tray_icon::menu::{
-    CheckMenuItem, Icon as MenuIcon, IconMenuItem, Menu, MenuEvent, MenuItem, PredefinedMenuItem,
-};
+#[cfg(not(target_os = "linux"))]
+use tray_icon::menu::PredefinedMenuItem;
+#[cfg(not(target_os = "linux"))]
+use tray_icon::menu::{CheckMenuItem, Icon as MenuIcon, IconMenuItem, Menu, MenuEvent, MenuItem};
+#[cfg(not(target_os = "linux"))]
 use tray_icon::{Icon, TrayIcon, TrayIconBuilder};
 
 #[cfg(target_os = "macos")]
@@ -22,8 +31,10 @@ const ICON: &[u8] = include_bytes!("../../assets/tray-mac.png");
 const ICON: &[u8] = include_bytes!("../../assets/tray-windows.png");
 
 /// The most devices listed in the menu. The window lists them all.
+#[cfg(not(target_os = "linux"))]
 const MAX_DEVICES: usize = 8;
 
+#[cfg(not(target_os = "linux"))]
 struct Items {
     menu: Menu,
     /// The title, which also says when syncing is paused.
@@ -63,6 +74,7 @@ pub fn run(app: Arc<App>, open_window: bool) -> ! {
     }
     crate::install::note_version();
 
+    #[cfg(not(target_os = "linux"))]
     let mut items = Items {
         menu: Menu::new(),
         header: MenuItem::new("Carryover", false, None),
@@ -75,18 +87,21 @@ pub fn run(app: Arc<App>, open_window: bool) -> ! {
         update: MenuItem::new("Check for Updates", true, None),
         quit: MenuItem::new("Quit Carryover", true, None),
     };
+    #[cfg(not(target_os = "linux"))]
     let mut tray: Option<TrayIcon> = None;
+    #[cfg(target_os = "linux")]
+    let mut tray: Option<crate::linux_desktop::Tray> = None;
     let mut window: Option<Window> = None;
     let mut shown = Vec::new();
     // Once set, every later event repeats it, since the loop delivers a few
     // more events before ending and each would otherwise reset the flow.
     let mut exiting: Option<i32> = None;
     // Windows: the panel the icon opens, made on first use.
-    #[cfg(windows)]
+    #[cfg(any(windows, target_os = "linux"))]
     let mut panel: Option<crate::panel::Panel> = None;
     // When the panel last hid, so the click on the icon that hid it doesn't
     // open it straight back up.
-    #[cfg(windows)]
+    #[cfg(any(windows, target_os = "linux"))]
     let mut panel_hidden_at: Option<Instant> = None;
 
     event_loop.run(move |event, target, flow| {
@@ -102,7 +117,11 @@ pub fn run(app: Arc<App>, open_window: bool) -> ! {
             Event::NewEvents(StartCause::Init) => {
                 #[cfg(target_os = "macos")]
                 edit_menu();
-                match build(&items) {
+                #[cfg(not(target_os = "linux"))]
+                let built = build(&items);
+                #[cfg(target_os = "linux")]
+                let built = crate::linux_desktop::Tray::new(proxy.clone());
+                match built {
                     Ok(icon) => tray = Some(icon),
                     Err(error) => eprintln!("couldn't show the tray icon: {error:#}"),
                 }
@@ -153,7 +172,7 @@ pub fn run(app: Arc<App>, open_window: bool) -> ! {
                     Err(error) => eprintln!("unknown request from the window: {error}"),
                 }
             }
-            #[cfg(windows)]
+            #[cfg(any(windows, target_os = "linux"))]
             Event::UserEvent(UserEvent::Panel(body)) => {
                 use crate::panel::Request as PanelRequest;
                 match serde_json::from_str::<PanelRequest>(&body) {
@@ -184,6 +203,45 @@ pub fn run(app: Arc<App>, open_window: bool) -> ! {
                     Err(error) => eprintln!("unknown request from the panel: {error}"),
                 }
             }
+            #[cfg(target_os = "linux")]
+            Event::UserEvent(UserEvent::TrayActivate { x, y }) => {
+                let just_hid =
+                    panel_hidden_at.is_some_and(|at| at.elapsed() < Duration::from_millis(400));
+                if panel.is_none() {
+                    match crate::panel::Panel::new(target, proxy.clone()) {
+                        Ok(made) => panel = Some(made),
+                        Err(error) => {
+                            eprintln!("couldn't open the panel: {error:#}");
+                            open_tab = Some("devices");
+                        }
+                    }
+                }
+                if let Some(panel) = &mut panel {
+                    if panel.is_visible() {
+                        panel.hide();
+                        panel_hidden_at = Some(Instant::now());
+                    } else if !just_hid {
+                        panel.show_at(
+                            tray_icon::Rect {
+                                position: (x as f64, y as f64).into(),
+                                size: (1u32, 1u32).into(),
+                            },
+                            &app,
+                        );
+                    }
+                }
+            }
+            #[cfg(target_os = "linux")]
+            Event::WindowEvent {
+                event: WindowEvent::CloseRequested,
+                window_id,
+                ..
+            } if panel.as_ref().is_some_and(|panel| panel.id() == window_id) => {
+                if let Some(panel) = &panel {
+                    panel.hide();
+                    panel_hidden_at = Some(Instant::now());
+                }
+            }
             Event::WindowEvent {
                 event: WindowEvent::CloseRequested,
                 window_id,
@@ -197,6 +255,7 @@ pub fn run(app: Arc<App>, open_window: bool) -> ! {
             _ => {}
         }
 
+        #[cfg(not(target_os = "linux"))]
         while let Ok(event) = MenuEvent::receiver().try_recv() {
             if event.id == items.open.id()
                 || items.devices.iter().any(|device| device.id() == &event.id)
@@ -231,8 +290,8 @@ pub fn run(app: Arc<App>, open_window: bool) -> ! {
                 ..
             } = event
             {
-                let just_hid = panel_hidden_at
-                    .is_some_and(|at| at.elapsed() < Duration::from_millis(400));
+                let just_hid =
+                    panel_hidden_at.is_some_and(|at| at.elapsed() < Duration::from_millis(400));
                 if panel.is_none() {
                     match crate::panel::Panel::new(target, proxy.clone()) {
                         Ok(made) => panel = Some(made),
@@ -254,7 +313,7 @@ pub fn run(app: Arc<App>, open_window: bool) -> ! {
         }
         // While the panel is open, check often whether another app came to
         // the front, which closes it.
-        #[cfg(windows)]
+        #[cfg(any(windows, target_os = "linux"))]
         if let Some(panel) = &mut panel
             && panel.is_visible()
         {
@@ -267,6 +326,10 @@ pub fn run(app: Arc<App>, open_window: bool) -> ! {
         }
 
         if let Some(tab) = open_tab {
+            #[cfg(target_os = "linux")]
+            if let Some(panel) = &panel {
+                panel.hide();
+            }
             if window.is_none() {
                 match Window::open(target, proxy.clone(), Some(tab)) {
                     Ok(opened) => window = Some(opened),
@@ -294,7 +357,7 @@ pub fn run(app: Arc<App>, open_window: bool) -> ! {
             // Dropping the icon removes it right away on Windows, rather than
             // when the mouse next passes over it.
             window = None;
-            #[cfg(windows)]
+            #[cfg(any(windows, target_os = "linux"))]
             {
                 panel = None;
             }
@@ -306,31 +369,45 @@ pub fn run(app: Arc<App>, open_window: bool) -> ! {
 
         if let Some(tray) = &tray {
             let status = app.hub.status();
-            let mut lines = vec![
-                header_line(&status),
-                activity_line(&status),
-                update_line(&app.updater.state()),
-                status.paused.to_string(),
-            ];
-            let listed = &status.devices[..status.devices.len().min(MAX_DEVICES)];
-            lines.extend(listed.iter().map(device_key));
-            // Only touches the menu when something changed, to avoid flicker.
-            if lines != shown {
-                if lines[4..] != *shown.get(4..).unwrap_or_default() {
-                    set_devices(&mut items, listed);
+            #[cfg(target_os = "linux")]
+            {
+                // Linux uses StatusNotifier activation and the HTML popup;
+                // there is no native menu to populate when peers connect.
+                let text = tooltip(&status);
+                if shown.first() != Some(&text) {
+                    let _ = tray.set_tooltip(Some(text.clone()));
+                    shown.clear();
+                    shown.push(text);
                 }
-                items.header.set_text(&lines[0]);
-                items.activity.set_text(&lines[1]);
-                items.update.set_text(&lines[2]);
-                items.pause.set_checked(status.paused);
-                let _ = tray.set_tooltip(Some(tooltip(&status)));
-                shown = lines;
+            }
+            #[cfg(not(target_os = "linux"))]
+            {
+                let mut lines = vec![
+                    header_line(&status),
+                    activity_line(&status),
+                    update_line(&app.updater.state()),
+                    status.paused.to_string(),
+                ];
+                let listed = &status.devices[..status.devices.len().min(MAX_DEVICES)];
+                lines.extend(listed.iter().map(device_key));
+                // Only touches the menu when something changed, to avoid flicker.
+                if lines != shown {
+                    if lines[4..] != *shown.get(4..).unwrap_or_default() {
+                        set_devices(&mut items, listed);
+                    }
+                    items.header.set_text(&lines[0]);
+                    items.activity.set_text(&lines[1]);
+                    items.update.set_text(&lines[2]);
+                    items.pause.set_checked(status.paused);
+                    let _ = tray.set_tooltip(Some(tooltip(&status)));
+                    shown = lines;
+                }
             }
         }
         if let Some(window) = &mut window {
             window.refresh(&app);
         }
-        #[cfg(windows)]
+        #[cfg(any(windows, target_os = "linux"))]
         if let Some(panel) = &mut panel
             && panel.is_visible()
         {
@@ -339,6 +416,7 @@ pub fn run(app: Arc<App>, open_window: bool) -> ! {
     })
 }
 
+#[cfg(not(target_os = "linux"))]
 fn build(items: &Items) -> Result<TrayIcon> {
     let menu = items.menu.clone();
     menu.append_items(&[
@@ -402,6 +480,7 @@ fn edit_menu() {
 }
 
 /// Replaces the device rows, which sit right after the header.
+#[cfg(not(target_os = "linux"))]
 fn set_devices(items: &mut Items, devices: &[DeviceStatus]) {
     for row in items.devices.drain(..) {
         let _ = items.menu.remove(&row);
@@ -423,16 +502,19 @@ fn set_devices(items: &mut Items, devices: &[DeviceStatus]) {
     }
 }
 
+#[cfg(not(target_os = "linux"))]
 fn picture(kind: Kind, online: bool) -> MenuIcon {
     MenuIcon::from_rgba(avatar::draw(kind, online), avatar::SIZE, avatar::SIZE)
         .expect("avatars are drawn at their stated size")
 }
 
 /// What a device row shows, to tell when the rows need redrawing.
+#[cfg(not(target_os = "linux"))]
 fn device_key(device: &DeviceStatus) -> String {
     format!("{}\t{}\t{}", device.id, device.name, device.connected)
 }
 
+#[cfg(not(target_os = "linux"))]
 fn header_line(status: &Status) -> String {
     if status.paused {
         "Carryover · Paused".to_owned()
@@ -449,6 +531,7 @@ fn header_line(status: &Status) -> String {
     }
 }
 
+#[cfg(not(target_os = "linux"))]
 fn activity_line(status: &Status) -> String {
     match &status.last_activity {
         Some(activity) => format!("{} · {}", activity.description, ago(activity.at.elapsed())),
@@ -456,6 +539,7 @@ fn activity_line(status: &Status) -> String {
     }
 }
 
+#[cfg(not(target_os = "linux"))]
 fn update_line(state: &State) -> String {
     match state {
         State::Available(release) => format!("Install Update ({})", release.version),

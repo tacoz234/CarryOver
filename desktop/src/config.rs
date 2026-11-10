@@ -167,9 +167,14 @@ fn write_private(path: &Path, contents: &[u8]) -> Result<()> {
 pub fn default_dir() -> Result<PathBuf> {
     #[cfg(windows)]
     let base = std::env::var_os("APPDATA").map(PathBuf::from);
-    #[cfg(not(windows))]
+    #[cfg(target_os = "macos")]
     let base = std::env::var_os("HOME")
         .map(|home| PathBuf::from(home).join("Library/Application Support"));
+    #[cfg(target_os = "linux")]
+    let base = std::env::var_os("XDG_CONFIG_HOME")
+        .filter(|path| Path::new(path).is_absolute())
+        .map(PathBuf::from)
+        .or_else(|| std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".config")));
     Ok(base
         .context("can't find the user's app data folder")?
         .join("CopyBlip"))

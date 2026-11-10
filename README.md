@@ -2,7 +2,7 @@
 
 # Carryover
 
-A shared clipboard across your Mac, Windows and iPhone devices. Copy on one, paste on another.
+A shared clipboard across your Mac, Windows, Linux and iPhone devices. Copy on one, paste on another.
 
 Created in [T3 Code](https://t3.codes).
 
@@ -14,6 +14,7 @@ Early. Text and images, run from a terminal on computers.
 | --- | --- |
 | Mac agent | Tested on macOS 27 with the real clipboard |
 | Windows agent | Runs on Windows 11; the window and updates aren't tested there yet |
+| Linux agent | KDE Plasma/Bazzite: Windows-style popup, setup and lifecycle; see [verification](docs/linux-verification.md) |
 | iPhone app | Runs on a real iPhone; iPhone to Mac confirmed |
 
 ## Install
@@ -22,6 +23,8 @@ Download from the [latest release](https://github.com/tacoz234/CarryOver/release
 
 - **Windows:** `Carryover-Setup.exe`. Open it and follow the setup wizard. It installs Carryover just for you, with no administrator needed, adds it to the Start menu and to Settings › Apps (where you can uninstall it), and starts it in the notification area.
 - **Mac:** `Carryover-Mac.dmg`. Open it, drag Carryover to Applications, and open it from there. The setup wizard adds it to the menu bar and, if you like, to your login items. The app isn't notarized yet, so the first time macOS blocks it: open **System Settings › Privacy & Security** and choose **Open Anyway**.
+
+**Linux (KDE Plasma/Bazzite, x86_64):** download `Carryover-Linux-x86_64.tar.gz` from the latest release, extract it, and open `Carryover/copyblip` for the setup wizard. See [Linux setup](docs/linux.md) for dependencies and [verification](docs/linux-verification.md) for tested behavior.
 
 The wizard asks whether this is your first device. If it is, it starts a group and shows a QR code for adding the next one. If not, paste the invite link from a device that already has Carryover (**Add a Device**, then **Show Link**).
 
@@ -42,7 +45,7 @@ To build the installers, run `desktop/scripts/package-windows.sh` (on a Mac with
 
 For development on a Mac, `desktop/scripts/install-mac-agent.sh` builds and runs the agent as a login item with a menu bar icon, and `uninstall-mac-agent.sh` removes it. The log is in `~/Library/Logs/CopyBlip.log`; on Windows it's `%APPDATA%\CopyBlip\copyblip.log`.
 
-The menu bar and notification area icons show what's connected and what last synced. On a Mac, the icon opens a menu. On Windows, clicking it opens a panel that stays open while you use it, with your devices, Pause Syncing and updates, and closes when you click elsewhere. **Open Carryover** in either opens the main window, which has:
+The menu bar and notification area icons show what's connected and what last synced. On a Mac, the icon opens a menu. On Windows and KDE Linux, clicking it opens a panel that stays open while you use it, with your devices, Pause Syncing and updates, and closes when you click elsewhere. **Open Carryover** in either opens the main window, which has:
 
 - **Devices:** every device in the group, with a green dot for the ones online, including ones connected through another computer.
 - **Recent:** the last 20 clips sent or received, with image thumbnails. Click one to copy it again.

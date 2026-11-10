@@ -28,12 +28,24 @@ pub struct App {
 #[serde(tag = "cmd", rename_all = "camelCase")]
 pub enum Request {
     Ready,
-    Pause { on: bool },
-    Login { on: bool },
-    AutoUpdate { on: bool },
-    Forget { device: String },
-    CopyClip { id: String },
-    DeleteClip { id: String },
+    Pause {
+        on: bool,
+    },
+    Login {
+        on: bool,
+    },
+    AutoUpdate {
+        on: bool,
+    },
+    Forget {
+        device: String,
+    },
+    CopyClip {
+        id: String,
+    },
+    DeleteClip {
+        id: String,
+    },
     ClearHistory,
     /// Handled by the event loop, which quits once it's done.
     LeaveGroup,
@@ -71,6 +83,9 @@ impl App {
             Request::Ready => {}
             Request::Pause { on } => self.hub.set_paused(on),
             Request::Login { on } => {
+                #[cfg(target_os = "linux")]
+                autostart::set_enabled_for_in(&std::env::current_exe()?, on, &self.dir)?;
+                #[cfg(not(target_os = "linux"))]
                 autostart::set_enabled(on)?;
                 self.login.store(on, Ordering::Relaxed);
             }
@@ -109,7 +124,7 @@ impl App {
         }
         let _ = std::fs::remove_dir_all(self.dir.join("history"));
         eprintln!("left the group");
-        if let Err(error) = open_setup() {
+        if let Err(error) = open_setup(&self.dir) {
             eprintln!("couldn't open setup: {error:#}");
         }
         Ok(())
@@ -184,7 +199,7 @@ pub fn ago(elapsed: Duration) -> String {
 /// Opens Carryover with no command, which shows setup when there's no group.
 /// On macOS it goes through Launch Services, since launchd ends what a
 /// login item started when the item quits.
-fn open_setup() -> Result<()> {
+fn open_setup(dir: &std::path::Path) -> Result<()> {
     #[cfg(target_os = "macos")]
     if let Some(bundle) = crate::install::bundle() {
         std::process::Command::new("open")
@@ -201,7 +216,11 @@ fn open_setup() -> Result<()> {
         const CREATE_NO_WINDOW: u32 = 0x0800_0000;
         command.creation_flags(CREATE_NO_WINDOW);
     }
-    command.spawn().context("couldn't open setup")?;
+    command
+        .arg("--config-dir")
+        .arg(dir)
+        .spawn()
+        .context("couldn't open setup")?;
     Ok(())
 }
 
@@ -211,6 +230,8 @@ pub fn open(path: &std::path::Path) -> Result<()> {
     let program = "open";
     #[cfg(windows)]
     let program = "explorer.exe";
+    #[cfg(target_os = "linux")]
+    let program = "xdg-open";
     std::process::Command::new(program)
         .arg(path)
         .spawn()

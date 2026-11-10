@@ -36,7 +36,7 @@ enum UserEvent {
     Request(String),
     Finished(Result<Value, String>),
     /// Moving to Applications didn't work.
-    #[cfg_attr(windows, allow(dead_code))]
+    #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
     Failed(String),
 }
 
@@ -80,13 +80,13 @@ pub fn run(plan: Plan) -> ! {
         Err(error) => fail(&format!("Carryover couldn't open its window: {error}")),
     };
     let ipc = proxy.clone();
-    let webview = WebViewBuilder::new()
+    let builder = WebViewBuilder::new()
         .with_html(PAGE)
         .with_devtools(cfg!(debug_assertions))
         .with_ipc_handler(move |request| {
             let _ = ipc.send_event(UserEvent::Request(request.into_body()));
-        })
-        .build(&window);
+        });
+    let webview = crate::window::build_webview(builder, &window);
     let webview = match webview {
         Ok(webview) => webview,
         Err(error) => no_webview(&error.to_string()),
@@ -138,6 +138,8 @@ pub fn run(plan: Plan) -> ! {
 
 /// What the page needs to know to choose its steps and wording.
 fn init(plan: &Plan) -> Value {
+    #[cfg(target_os = "linux")]
+    let (platform, needs_move) = ("linux", false);
     #[cfg(windows)]
     let (platform, needs_move) = ("windows", false);
     #[cfg(target_os = "macos")]
@@ -177,6 +179,12 @@ fn finish(
         None
     };
     let program = if install {
+        #[cfg(target_os = "linux")]
+        {
+            install::stop_running();
+            crate::linux_install::install_from_in(&std::env::current_exe()?, &dir)?
+        }
+        #[cfg(not(target_os = "linux"))]
         install::install()?
     } else {
         install::program()?
@@ -184,6 +192,12 @@ fn finish(
     if let Some(config) = &config {
         config.save(&dir, true)?;
     }
+    #[cfg(target_os = "linux")]
+    {
+        crate::autostart::set_enabled_for_in(&program, login, &dir)?;
+        install::spawn_linux_in(&program, &dir, &[])?;
+    }
+    #[cfg(not(target_os = "linux"))]
     install::start(&program, login)?;
     let link = Config::load(&dir)?.invite_link();
     Ok(json!({
@@ -204,7 +218,7 @@ fn move_to_applications(proxy: EventLoopProxy<UserEvent>) {
     });
 }
 
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "linux"))]
 fn move_to_applications(_proxy: EventLoopProxy<UserEvent>) {}
 
 /// Calls a function on the page with one JSON argument.
@@ -245,12 +259,14 @@ fn no_webview(error: &str) -> ! {
         eprintln!("couldn't create the web view: {error}");
         std::process::exit(1);
     }
-    #[cfg(target_os = "macos")]
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
     fail(&format!("Carryover couldn't open its window: {error}"))
 }
 
 pub fn fail(text: &str) -> ! {
     eprintln!("{text}");
+    #[cfg(target_os = "linux")]
+    message("Carryover", text, false);
     #[cfg(windows)]
     message("Carryover", text, false);
     #[cfg(target_os = "macos")]
@@ -314,4 +330,31 @@ fn app_menu() {
         // The menu lives as long as the app.
         std::mem::forget(menu);
     }
+}
+
+#[cfg(target_os = "linux")]
+pub fn message(title: &str, text: &str, ask: bool) -> bool {
+    use gtk::prelude::*;
+    if gtk::init().is_err() {
+        eprintln!("{title}: {text}");
+        return false;
+    }
+    let dialog = gtk::MessageDialog::builder()
+        .text(title)
+        .secondary_text(text)
+        .message_type(if ask {
+            gtk::MessageType::Question
+        } else {
+            gtk::MessageType::Info
+        })
+        .buttons(if ask {
+            gtk::ButtonsType::YesNo
+        } else {
+            gtk::ButtonsType::Ok
+        })
+        .modal(true)
+        .build();
+    let result = dialog.run();
+    dialog.close();
+    result == gtk::ResponseType::Yes
 }

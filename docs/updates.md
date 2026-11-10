@@ -2,7 +2,7 @@
 
 ## On computers
 
-Carryover on Mac and Windows checks for a new version 15 seconds after it starts, then every 6 hours. With **Install updates automatically** on (the default), it downloads the update, swaps it in, and restarts itself, which takes about a second. With it off, the window shows an **Install** button and the tray menu shows **Install Update**.
+Carryover on Mac, Windows and Linux checks for a new version 15 seconds after it starts, then every 6 hours. With **Install updates automatically** on (the default), it downloads the update, swaps it in, and restarts itself, which takes about a second. With it off, the window shows an **Install** button and the tray menu shows **Install Update**.
 
 **Settings › Updates › Check for Updates** checks right away.
 
@@ -42,3 +42,9 @@ The private key is at `~/.config/copyblip/release-signing-key`, outside the repo
 On Windows, `desktop/scripts/package-windows.ps1` builds the program and installer natively using the installed Windows Rust host target (MSVC or GNU). It does not require `sh` or Git Bash on PATH. Both builds use their lockfiles, and packaging restores any pre-existing `CARRYOVER_EXE` / `CARRYOVER_LOADER` environment values afterwards.
 
 For an automatic-update smoke test, transfer a signed test feed from the release-key machine, serve it on localhost, and set `COPYBLIP_UPDATE_FEED` only for the test process. The test feed must contain an actually newer program version. Afterwards stop the test process, clear the override, and rerun the 0.4.0 installer to restore the release candidate while keeping pairing and history. Never publish the test version or replace the release key to make a test pass.
+
+## Linux download added to v0.4.0
+
+The Linux x86_64 package is published as `Carryover-Linux-x86_64.tar.gz`. Its raw executable is `copyblip-linux-x86_64`; `Carryover-Linux-Source.tar.gz` contains the matching source snapshot, and `Carryover-Linux-SHA256SUMS.txt` lists checksums for these Linux assets. The original v0.4.0 tag still identifies the Mac/Windows release; the Linux source asset and release notes identify the Linux commit.
+
+The v0.4.0 signed manifest remains the original Mac/Windows manifest. Linux is available for manual installation, but is not advertised through that manifest. A future coordinated release must include Linux in a newly signed manifest to deliver automatic Linux updates. Do not modify or regenerate the current signature without the original release key.

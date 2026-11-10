@@ -45,10 +45,10 @@ enum Command {
         /// Use a private pasteboard instead of the real clipboard (macOS, for testing)
         #[arg(long)]
         pasteboard: Option<String>,
-        /// Close the console window and log to copyblip.log in the config folder (Windows)
+        /// Run in the background and log to copyblip.log (Windows/Linux)
         #[arg(long)]
         background: bool,
-        /// Show an icon in the menu bar (macOS) or notification area (Windows)
+        /// Show an icon in the menu bar (macOS) or system tray (Windows/Linux)
         #[arg(long)]
         tray: bool,
         /// What other devices call this one. Defaults to the host name
@@ -121,6 +121,12 @@ fn open_clipboard(pasteboard: Option<String>) -> Result<Arc<dyn Clipboard>> {
         bail!("--pasteboard is macOS only");
     }
     Ok(Arc::new(copyblip::clipboard::windows::WindowsClipboard))
+}
+
+#[cfg(target_os = "linux")]
+fn open_clipboard(pasteboard: Option<String>) -> Result<Arc<dyn Clipboard>> {
+    anyhow::ensure!(pasteboard.is_none(), "--pasteboard is macOS only");
+    Ok(Arc::new(copyblip::clipboard::linux::LinuxClipboard::new()?))
 }
 
 #[cfg(windows)]
@@ -216,7 +222,7 @@ fn device_name() -> String {
 }
 
 /// Opened from Explorer, Finder or the Start menu, with no command.
-#[cfg(any(target_os = "macos", windows))]
+#[cfg(any(target_os = "macos", windows, target_os = "linux"))]
 fn launch(dir: PathBuf) -> Result<()> {
     use copyblip::control::{self, Command};
     use copyblip::{install, setup};
@@ -244,12 +250,14 @@ fn launch(dir: PathBuf) -> Result<()> {
             .spawn()
             .context("couldn't start Carryover")?;
     }
+    #[cfg(target_os = "linux")]
+    install::spawn_linux_in(&program, &dir, &["--window"])?;
     #[cfg(target_os = "macos")]
     install::spawn_mac(&program, &["--window"])?;
     Ok(())
 }
 
-#[cfg(not(any(target_os = "macos", windows)))]
+#[cfg(not(any(target_os = "macos", windows, target_os = "linux")))]
 fn launch(_dir: PathBuf) -> Result<()> {
     bail!("choose a command; see --help")
 }
@@ -264,6 +272,26 @@ fn attach_console() {
 }
 
 fn main() -> Result<()> {
+    // WebKit's DMA-BUF renderer can load the DOM but paint a blank surface
+    // on proprietary NVIDIA drivers. Select its compatible renderer before
+    // GTK/WebKit or any threads start; preserve an explicit user override.
+    #[cfg(target_os = "linux")]
+    if std::path::Path::new("/sys/module/nvidia").exists()
+        && std::env::var_os("WEBKIT_DISABLE_DMABUF_RENDERER").is_none()
+    {
+        unsafe {
+            std::env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "1");
+        }
+    }
+    // GTK/XWayland allows tray popups to use the coordinates supplied by
+    // Plasma. This does not change native Wayland clipboard access.
+    #[cfg(target_os = "linux")]
+    if std::env::var_os("DISPLAY").is_some() && std::env::var_os("GDK_BACKEND").is_none() {
+        // Before starting any threads or initializing GTK.
+        unsafe {
+            std::env::set_var("GDK_BACKEND", "x11");
+        }
+    }
     #[cfg(target_os = "macos")]
     if let Err(error) = copyblip::update::repair_bundle_signature() {
         // A damaged resource seal should not turn an otherwise runnable app
@@ -317,6 +345,20 @@ fn main() -> Result<()> {
             name,
             window,
         } => {
+            #[cfg(target_os = "linux")]
+            if background {
+                anyhow::ensure!(pasteboard.is_none(), "--pasteboard is macOS only");
+                let mut extra = vec!["--port".to_owned(), port.to_string()];
+                if let Some(name) = &name {
+                    extra.extend(["--name".into(), name.clone()]);
+                }
+                if window {
+                    extra.push("--window".into());
+                }
+                let args = extra.iter().map(String::as_str).collect::<Vec<_>>();
+                copyblip::install::spawn_linux_run(&std::env::current_exe()?, &dir, tray, &args)?;
+                return Ok(());
+            }
             if background {
                 detach_console(&dir.join("copyblip.log"))?;
             }
@@ -347,7 +389,7 @@ fn main() -> Result<()> {
                 #[cfg(target_os = "macos")]
                 let log = PathBuf::from(std::env::var_os("HOME").context("no home folder")?)
                     .join("Library/Logs/CopyBlip.log");
-                #[cfg(windows)]
+                #[cfg(any(windows, target_os = "linux"))]
                 let log = dir.join("copyblip.log");
                 hub.remember_devices(dir.join("devices.json"));
                 hub.keep_history(dir.join("history"));
@@ -378,7 +420,7 @@ fn main() -> Result<()> {
                 }
             }
         }
-        #[cfg(any(target_os = "macos", windows))]
+        #[cfg(any(target_os = "macos", windows, target_os = "linux"))]
         Command::Setup => copyblip::setup::run(copyblip::setup::Plan {
             // Adds the shortcut and the Settings › Apps entry, and replaces
             // any login item from an older install.
@@ -386,7 +428,7 @@ fn main() -> Result<()> {
             pair: Config::load(&dir).is_err(),
             dir,
         }),
-        #[cfg(not(any(target_os = "macos", windows)))]
+        #[cfg(not(any(target_os = "macos", windows, target_os = "linux")))]
         Command::Setup => bail!("setup is for macOS and Windows"),
         Command::Uninstall => {
             #[cfg(windows)]
@@ -413,7 +455,28 @@ This PC stays in your group, so                      installing Carryover again 
                     }
                 }
             }
-            #[cfg(not(windows))]
+            #[cfg(target_os = "linux")]
+            {
+                if copyblip::setup::message(
+                    "Uninstall Carryover",
+                    "Remove Carryover from this computer?\n\nYour group and clipboard history will be kept for reinstalling.",
+                    true,
+                ) {
+                    match copyblip::linux_install::uninstall() {
+                        Ok(()) => {
+                            copyblip::setup::message(
+                                "Uninstall Carryover",
+                                "Carryover was removed from this computer.",
+                                false,
+                            );
+                        }
+                        Err(error) => copyblip::setup::fail(&format!(
+                            "Couldn't uninstall Carryover: {error:#}"
+                        )),
+                    }
+                }
+            }
+            #[cfg(not(any(windows, target_os = "linux")))]
             bail!("uninstall is for Windows. On macOS, drag Carryover to the Trash");
         }
         Command::ReleaseKey { key } => {

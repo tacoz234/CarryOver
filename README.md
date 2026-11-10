@@ -6,6 +6,8 @@ Encrypted clipboard sharing for macOS, Windows, Linux, and iPhone. Copy text and
 
 Created in [T3 Code](https://t3.codes).
 
+[Visit the Carryover website](https://tacoz234.github.io/CarryOver/).
+
 ## What it does
 
 - **Text and images:** share text and PNG images between paired devices.
@@ -83,6 +85,7 @@ On Windows, allow `copyblip` through the firewall when asked. On macOS, choose A
 
 ## Docs
 
+- [Website source and local preview](website/README.md): the product landing page and static build instructions
 - [iPhone setup](docs/iphone-setup.md): permissions and how to use it
 - [Linux setup](docs/linux.md): dependencies, installation, and desktop compatibility
 - [Linux verification](docs/linux-verification.md): tested behavior and remaining limits

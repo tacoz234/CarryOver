@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#F5F5F7">
+  <meta name="description" content="Copy text and images on one device, then paste on another. Carryover shares your clipboard over your local network. Free, open source, and encrypted.">
+  <meta property="og:title" content="Carryover — Copy here. Paste there.">
+  <meta property="og:description" content="Your clipboard, across your devices. Local, encrypted, and open source.">
+  <meta property="og:type" content="website">
+  <title>Carryover — Copy here. Paste there.</title>
+  <link rel="icon" type="image/png" href="assets/icon-rounded.png">
+  <link rel="stylesheet" href="styles.css">
+  <script src="script.js" defer></script>
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to content</a>
+  <svg class="icon-definitions" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+    <symbol id="i-computer" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 21h8m-4-5v5"/></symbol>
+    <symbol id="i-phone" viewBox="0 0 24 24"><rect x="6" y="2" width="12" height="20" rx="3"/><path d="M11 18h2"/></symbol>
+    <symbol id="i-arrow" viewBox="0 0 24 24"><path d="M4 12h16m-6-6 6 6-6 6"/></symbol>
+    <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 3v12m-5-5 5 5 5-5M4 16v4h16v-4"/></symbol>
+    <symbol id="i-lock" viewBox="0 0 24 24"><rect x="5" y="10" width="14" height="11" rx="3"/><path d="M8 10V7a4 4 0 0 1 8 0v3m-4 5v2"/></symbol>
+    <symbol id="i-history" viewBox="0 0 24 24"><path d="M3 11a9 9 0 1 1 2.5 7M3 4v7h7m2-4v5l3 2"/></symbol>
+    <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+    <symbol id="i-settings" viewBox="0 0 24 24"><path d="m9 3-1 3-3 1 1 3-2 2 2 2-1 3 3 1 1 3h6l1-3 3-1-1-3 2-2-2-2 1-3-3-1-1-3Z"/><circle cx="12" cy="12" r="3"/></symbol>
+    <symbol id="i-github" viewBox="0 0 24 24"><path d="M9 19c-4 1-4-2-6-2m12 5v-3.4a3 3 0 0 0-.8-2.3c2.7-.3 5.5-1.3 5.5-6a4.7 4.7 0 0 0-1.3-3.3 4.4 4.4 0 0 0-.1-3.3S17.3 3.4 15 5a11 11 0 0 0-6 0C6.7 3.4 5.7 3.7 5.7 3.7A4.4 4.4 0 0 0 5.6 7a4.7 4.7 0 0 0-1.3 3.3c0 4.7 2.8 5.7 5.5 6a3 3 0 0 0-.8 2.3V22"/></symbol>
+  </svg>
+
+  <header class="site-header">
+    <div class="shell header-inner">
+      <a class="brand" href="#" aria-label="Carryover home"><img src="assets/icon-rounded.png" width="34" height="34" alt=""><span>Carryover</span></a>
+      <nav class="desktop-nav" aria-label="Main navigation"><a href="#how-it-works">How it works</a><a href="#features">Features</a><a href="#faq">FAQ</a><a href="https://github.com/tacoz234/CarryOver">GitHub <span aria-hidden="true">↗</span></a></nav>
+      <div class="header-actions"><a class="button button-small" href="#downloads">Download <svg class="icon" aria-hidden="true"><use href="#i-download"/></svg></a><button class="menu-toggle" aria-label="Open navigation" aria-controls="mobile-nav" aria-expanded="false" hidden><span></span><span></span></button></div>
+    </div>
+    <nav id="mobile-nav" class="mobile-nav shell" aria-label="Mobile navigation" hidden><a href="#how-it-works">How it works</a><a href="#features">Features</a><a href="#downloads">Downloads</a><a href="#faq">FAQ</a><a href="https://github.com/tacoz234/CarryOver">GitHub ↗</a></nav>
+  </header>
+
+  <main id="main">
+    <section class="hero shell" aria-labelledby="hero-title">
+      <div class="hero-copy">
+        <p class="eyebrow release-badge"><span class="release-dot" aria-hidden="true"></span> Free and open source <span class="badge-divider">/</span> Early release</p>
+        <h1 id="hero-title">Copy here.<br class="mobile-break"> Paste there.</h1>
+        <p class="hero-description">Your clipboard, across your devices.<br>Share text and images over your local network.<br class="desktop-break"> Encrypted. No account needed.</p>
+        <div class="hero-actions"><a class="button" href="#downloads">Download Carryover <svg class="icon" aria-hidden="true"><use href="#i-download"/></svg></a><a class="text-link" href="https://github.com/tacoz234/CarryOver">View on GitHub <span aria-hidden="true">↗</span></a></div>
+        <p class="platform-note">macOS · Windows · Linux <span> / </span> iPhone requires Xcode and syncs when opened.</p>
+      </div>
+
+      <div class="showcase" aria-label="Illustration of a clipboard shared between computers">
+        <div class="showcase-heading"><span><span class="status-dot" aria-hidden="true"></span> One network. Your devices.</span><span class="demo-label">Illustrative preview</span></div>
+        <div class="handoff-layout">
+          <div class="app-window">
+            <div class="window-bar"><div class="traffic-lights" aria-hidden="true"><i></i><i></i><i></i></div><span><img src="assets/icon-rounded.png" width="15" height="15" alt=""> Carryover</span><span class="window-bar-end"></span></div>
+            <div class="app-layout">
+              <div class="app-sidebar" aria-hidden="true"><div class="sidebar-selected"><svg class="icon"><use href="#i-computer"/></svg>Devices</div><div><svg class="icon"><use href="#i-history"/></svg>Recent</div><div><svg class="icon"><use href="#i-plus"/></svg>Add a Device</div><div><svg class="icon"><use href="#i-settings"/></svg>Settings</div><span class="sidebar-caption">Your clipboard.<br>Your devices.</span></div>
+              <div class="app-content"><div class="app-title"><h2>Devices</h2><span class="small-muted">Your group</span></div>
+                <div class="device-row"><span class="avatar"><svg class="icon" aria-hidden="true"><use href="#i-computer"/></svg></span><div><strong>Home Mac</strong><span>This computer</span></div><span class="status-dot" aria-label="Online"></span></div>
+                <div class="device-row"><span class="avatar"><svg class="icon" aria-hidden="true"><use href="#i-computer"/></svg></span><div><strong>Linux PC</strong><span>Online</span></div><span class="status-dot" aria-label="Online"></span></div>
+                <div class="device-row"><span class="avatar"><svg class="icon" aria-hidden="true"><use href="#i-phone"/></svg></span><div><strong>iPhone</strong><span>Syncs when you open Carryover</span></div></div>
+              </div>
+            </div>
+          </div>
+          <div class="clip-bridge" aria-hidden="true"><span></span><svg class="icon"><use href="#i-arrow"/></svg><span></span></div>
+          <div class="handoff-card"><div class="handoff-card-top"><span class="avatar avatar-small"><svg class="icon" aria-hidden="true"><use href="#i-computer"/></svg></span><div><strong>Linux PC</strong><span>Ready to paste</span></div></div><div class="clip-preview"><span class="clip-kind">A little something from your Mac</span><p data-text-example>Good ideas travel.</p><div data-image-example hidden><div class="sample-image" role="img" aria-label="Illustrative orange sun over coral hills"><span></span></div><p class="image-caption">A screenshot worth sharing.</p></div></div><div class="handoff-status"><svg class="icon" aria-hidden="true"><use href="#i-lock"/></svg> Encrypted over your local network</div></div>
+        </div>
+        <div class="demo-footer"><span>Copy on one. Paste on the other.</span><div class="example-switch" role="group" aria-label="Choose clipboard example" hidden><button type="button" data-example="text" aria-pressed="true">Text</button><button type="button" data-example="image" aria-pressed="false">Image</button></div></div>
+      </div>
+      <div class="hero-bottom"><span>Built for the devices you already use.</span><div><span>macOS</span><span>Windows</span><span>Linux</span><span>iPhone<sup>*</sup></span></div></div>
+    </section>
+
+    <section id="how-it-works" class="section shell">
+      <div class="section-heading"><p class="eyebrow">A familiar habit. A little more reach.</p><h2>Three steps.<br>Then just copy and paste.</h2></div>
+      <div class="steps"><article><span class="step-number">01</span><h3>Install on your devices.</h3><p>Get Carryover on the computers you use. Keep them on the same Wi-Fi or Ethernet network.</p></article><article><span class="step-number">02</span><h3>Make them a group.</h3><p>Start a group on your first device. Add your others with an invite link or QR code.</p></article><article><span class="step-number">03</span><h3>Pick up where you copied.</h3><p>Copy text or an image, then paste on another computer. On iPhone, open Carryover to send or receive.</p></article></div>
+    </section>
+
+    <section id="features" class="section shell">
+      <div class="section-heading features-heading"><div><p class="eyebrow">Small app. Useful every day.</p><h2>A shorter trip<br>from here to there.</h2></div><p>For the link on your other computer.<br> The screenshot you just took.<br> The thought you don’t want to type twice.</p></div>
+      <div class="feature-panels"><article class="feature-panel privacy-panel"><span class="feature-icon"><svg class="icon" aria-hidden="true"><use href="#i-lock"/></svg></span><h3>Your clipboard stays<br>between your devices.</h3><p>Clips travel encrypted over your local network. No account. No hosted clipboard service. No internet syncing.</p><div class="network-diagram" aria-hidden="true"><span><svg class="icon"><use href="#i-computer"/></svg></span><i></i><svg class="icon diagram-lock"><use href="#i-lock"/></svg><i></i><span><svg class="icon"><use href="#i-phone"/></svg></span></div><span class="panel-caption">Local by design.</span></article><article class="feature-panel history-panel"><span class="feature-icon"><svg class="icon" aria-hidden="true"><use href="#i-history"/></svg></span><h3>A second chance<br>at your last copy.</h3><p>Find the last 20 clips you sent or received. Text previews and image thumbnails make it easy to spot the right one and copy it again.</p><div class="recent-examples" aria-label="Example recent clipboard items"><div><span>TEXT</span><p>Good ideas travel.</p><small>Sent from Home Mac</small></div><div><div class="sample-image sample-image-small" role="img" aria-label="Orange sun over coral hills"><span></span></div><small>Received from Linux PC</small></div></div></article></div>
+      <div class="feature-details"><div><h3>Know what’s connected.</h3><p>See your devices and which computers are online at a glance.</p></div><div><h3>Take a pause.</h3><p>Pause and resume syncing from your menu bar or system tray.</p></div><div><h3>Make yourself at home.</h3><p>Set Carryover to open at login and keep it close while you work.</p></div></div>
+    </section>
+
+    <section id="downloads" class="section downloads-section"><div class="shell"><div class="section-heading"><p class="eyebrow">Bring your clipboard along.</p><h2>At home on your devices.</h2><p>Free and open source. Choose a build to get started.</p></div>
+      <div class="download-grid">
+        <article class="download-card"><svg class="icon platform-icon" aria-hidden="true"><use href="#i-computer"/></svg><h3>macOS</h3><span class="download-meta">Apple silicon</span><p>Open the disk image, drag Carryover to Applications, and follow the setup wizard.</p><a class="button" href="https://github.com/tacoz234/CarryOver/releases/latest/download/Carryover-Mac.dmg">Download for Mac <svg class="icon" aria-hidden="true"><use href="#i-download"/></svg></a><span class="download-footnote">DMG · Not notarized yet</span><a class="guide-link" href="https://github.com/tacoz234/CarryOver#install">First-launch instructions ↗</a></article>
+        <article class="download-card"><svg class="icon platform-icon" aria-hidden="true"><use href="#i-computer"/></svg><h3>Windows</h3><span class="download-meta">x64 · Tested on Windows 11</span><p>A setup wizard gets you started. Carryover lives in your system tray, ready when you are.</p><a class="button" href="https://github.com/tacoz234/CarryOver/releases/latest/download/Carryover-Setup.exe">Download for Windows <svg class="icon" aria-hidden="true"><use href="#i-download"/></svg></a><span class="download-footnote">EXE installer · No administrator needed</span><a class="guide-link" href="https://github.com/tacoz234/CarryOver#install">Installation details ↗</a></article>
+        <article class="download-card"><svg class="icon platform-icon" aria-hidden="true"><use href="#i-computer"/></svg><h3>Linux</h3><span class="download-meta">x86_64 · KDE Plasma / Bazzite</span><p>Extract the archive and open Carryover. Check the setup guide for required runtime libraries.</p><a class="button" href="https://github.com/tacoz234/CarryOver/releases/latest/download/Carryover-Linux-x86_64.tar.gz">Download for Linux <svg class="icon" aria-hidden="true"><use href="#i-download"/></svg></a><span class="download-footnote">tar.gz · Manual updates</span><a class="guide-link" href="https://github.com/tacoz234/CarryOver/blob/clipboard-sync-v0/docs/linux.md">Linux setup guide ↗</a></article>
+        <article class="download-card iphone-card"><svg class="icon platform-icon" aria-hidden="true"><use href="#i-phone"/></svg><h3>iPhone</h3><span class="download-meta">Build with Xcode</span><p>Open Carryover to send what you copied or get the latest clip from your computers.</p><a class="button button-secondary" href="https://github.com/tacoz234/CarryOver/blob/clipboard-sync-v0/docs/iphone-setup.md">iPhone setup guide <span aria-hidden="true">↗</span></a><span class="download-footnote">No App Store download yet</span><span class="guide-note">Syncs when opened</span></article>
+      </div>
+      <p class="release-note"><strong>A little early. A lot of possibility.</strong> Carryover is actively developed, and testing varies by platform. Linux currently targets KDE Plasma/Bazzite; GNOME Wayland is unsupported. <a href="https://github.com/tacoz234/CarryOver#status">See current support and release notes <span aria-hidden="true">↗</span></a></p>
+    </div></section>
+
+    <section id="faq" class="section shell faq-section"><div class="section-heading"><p class="eyebrow">Before you copy.</p><h2>A few useful answers.</h2><a class="text-link" href="https://github.com/tacoz234/CarryOver#docs">More in the documentation <span aria-hidden="true">↗</span></a></div><div class="faq-list">
+      <details><summary>Do my devices need to be on the same network?<span aria-hidden="true">+</span></summary><p>Yes. Connect your devices to the same local Wi-Fi or Ethernet network. Carryover discovers devices locally and shares clips between them. It does not offer internet or remote-network syncing.</p></details>
+      <details><summary>How are my clips protected?<span aria-hidden="true">+</span></summary><p>Your devices share a group key and use authenticated encryption for clipboard transfers. Invite links and QR codes contain that shared secret: anyone with it can read what the group copies, so only share it with your own devices. Recent clips are stored locally. <a href="https://github.com/tacoz234/CarryOver/blob/clipboard-sync-v0/docs/protocol.md">Read the protocol and its limitations.</a></p></details>
+      <details><summary>How does it work on iPhone?<span aria-hidden="true">+</span></summary><p>Opening Carryover sends a newly copied item from your iPhone, or retrieves the latest clip from your other devices. It does not sync continuously in the background. The iPhone app currently requires building with Xcode; there is no App Store download.</p></details>
+      <details><summary>Which Linux desktops are supported?<span aria-hidden="true">+</span></summary><p>The current x86_64 package targets KDE Plasma and Bazzite with compatible runtime libraries. GNOME Wayland is unsupported. Linux installations and updates are manual. The <a href="https://github.com/tacoz234/CarryOver/blob/clipboard-sync-v0/docs/linux.md">Linux guide</a> lists dependencies and setup steps.</p></details>
+      <details><summary>What can I copy between devices?<span aria-hidden="true">+</span></summary><p>Plain text and PNG images. That includes links, code snippets, and screenshots. Carryover is a clipboard sharing utility; it does not transfer files or preserve rich text formatting.</p></details>
+      <details><summary>What does “early release” mean?<span aria-hidden="true">+</span></summary><p>The app is usable, but setup and testing vary by platform. The Mac app is not notarized yet, the iPhone app needs an Xcode build, and Linux has specific desktop and library requirements. Check the <a href="https://github.com/tacoz234/CarryOver#status">current support status</a> before installing, and report problems on GitHub.</p></details>
+    </div></section>
+
+    <section class="closing shell"><img src="assets/icon-rounded.png" width="64" height="64" alt=""><h2>One less thing<br>to send yourself.</h2><a class="button" href="#downloads">Get Carryover <svg class="icon" aria-hidden="true"><use href="#i-arrow"/></svg></a></section>
+  </main>
+  <footer class="site-footer shell"><div><a href="#" class="brand"><img src="assets/icon-rounded.png" width="26" height="26" alt=""><span>Carryover</span></a><p>Copy here. Paste there.</p></div><nav aria-label="Footer"><a href="https://github.com/tacoz234/CarryOver">GitHub ↗</a><a href="https://github.com/tacoz234/CarryOver/releases/latest">Releases ↗</a><a href="https://github.com/tacoz234/CarryOver#docs">Setup guides ↗</a><a href="https://github.com/tacoz234/CarryOver/blob/clipboard-sync-v0/LICENSE">GPL-3.0-or-later</a></nav><p class="footer-note">Made for your own devices. <span>* iPhone syncs when opened.</span></p></footer>
+</body>
+</html>

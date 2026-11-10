@@ -2,20 +2,33 @@
 
 # Carryover
 
-A shared clipboard across your Mac, Windows, Linux and iPhone devices. Copy on one, paste on another.
+Encrypted clipboard sharing for macOS, Windows, Linux, and iPhone. Copy text and images on one device, then paste on another over your local network.
 
 Created in [T3 Code](https://t3.codes).
 
+## What it does
+
+- **Text and images:** share text and PNG images between paired devices.
+- **Local and encrypted:** devices discover each other on your network and exchange encrypted clips. No account or hosted sync service is required.
+- **Easy pairing:** create a group, then add devices with a QR code or invite link.
+- **Desktop controls:** a tray/menu bar icon, connected devices, recent clips, pause/resume, and login startup.
+
 ## Status
 
-Early. Text and images, run from a terminal on computers.
+Early release. Desktop apps include graphical setup and a main window; terminal commands are also available. Support and testing vary by platform:
 
 | Part | State |
 | --- | --- |
 | Mac agent | Tested on macOS 27 with the real clipboard |
 | Windows agent | Runs on Windows 11; the window and updates aren't tested there yet |
-| Linux agent | KDE Plasma/Bazzite: Windows-style popup, setup and lifecycle; see [verification](docs/linux-verification.md) |
-| iPhone app | Runs on a real iPhone; iPhone to Mac confirmed |
+| Linux agent | x86_64 KDE Plasma/Bazzite: Windows-style popup, setup and lifecycle; see [verification](docs/linux-verification.md) |
+| iPhone app | Build with Xcode; syncs when opened. iPhone to Mac confirmed |
+
+### Before you install
+
+- Devices must be on the same local network. Carryover does not provide internet or remote-network syncing.
+- The iPhone app currently requires an Xcode build; there is no App Store download. It syncs when opened, rather than continuously in the background.
+- Linux desktop support targets KDE Plasma/Bazzite with compatible runtime libraries. The current published package is x86_64; GNOME Wayland is not supported. See the [Linux guide](docs/linux.md).
 
 ## Install
 
@@ -41,9 +54,17 @@ copyblip invite        # shows a QR code to scan with an iPhone
 copyblip run           # on every computer
 ```
 
-To build the installers, run `desktop/scripts/package-windows.sh` (on a Mac with `brew install mingw-w64`, or on a PC with Git for Windows; `package-windows.ps1` runs it from PowerShell) and `desktop/scripts/package-mac.sh` (on a Mac). They write `Carryover-Setup.exe`, `Carryover.app` and `Carryover-Mac.dmg` to `desktop/target`.
+Build the installation packages with:
 
-For development on a Mac, `desktop/scripts/install-mac-agent.sh` builds and runs the agent as a login item with a menu bar icon, and `uninstall-mac-agent.sh` removes it. The log is in `~/Library/Logs/CopyBlip.log`; on Windows it's `%APPDATA%\CopyBlip\copyblip.log`.
+- **Windows:** `desktop/scripts/package-windows.ps1` from PowerShell on Windows. It builds natively without Git Bash. `package-windows.sh` also supports cross-building on a Mac with MinGW.
+- **Mac:** `desktop/scripts/package-mac.sh` on a Mac.
+- **Linux:** `desktop/scripts/package-linux.sh` on Linux; install the [native build dependencies](docs/linux.md#build) first.
+
+Packages are written to `desktop/target`.
+
+For development on a Mac, `desktop/scripts/install-mac-agent.sh` builds and runs the agent as a login item with a menu bar icon, and `uninstall-mac-agent.sh` removes it. The log is in `~/Library/Logs/CopyBlip.log`; on Windows it's `%APPDATA%\CopyBlip\copyblip.log`, and on Linux it's `${XDG_CONFIG_HOME:-~/.config}/CopyBlip/copyblip.log`.
+
+On KDE Linux, look for the orange Carryover icon with a white clipboard and arrow; it is separate from KDE's clipboard manager.
 
 The menu bar and notification area icons show what's connected and what last synced. On a Mac, the icon opens a menu. On Windows and KDE Linux, clicking it opens a panel that stays open while you use it, with your devices, Pause Syncing and updates, and closes when you click elsewhere. **Open Carryover** in either opens the main window, which has:
 
@@ -52,9 +73,9 @@ The menu bar and notification area icons show what's connected and what last syn
 - **Add a Device:** a QR code for the iPhone and an invite link for computers.
 - **Settings:** pause syncing, open at login, updates, and the log.
 
-Computers update themselves from signed releases; see [updates](docs/updates.md).
+Mac and Windows installations update themselves from signed releases. The current Linux download is available for manual installation; automatic Linux updates require a future release with Linux included in the signed manifest. See [updates](docs/updates.md).
 
-Devices on the same Wi-Fi find each other. They need to be on the same network to sync.
+Devices discover each other automatically on the same local network, whether connected over Wi-Fi or Ethernet.
 
 The pairing code is the group's only secret, so treat it like a password. Anyone who has it can read everything the group copies.
 
@@ -63,6 +84,8 @@ On Windows, allow `copyblip` through the firewall when asked. On macOS, choose A
 ## Docs
 
 - [iPhone setup](docs/iphone-setup.md): permissions and how to use it
+- [Linux setup](docs/linux.md): dependencies, installation, and desktop compatibility
+- [Linux verification](docs/linux-verification.md): tested behavior and remaining limits
 - [Updates](docs/updates.md): how computers update, and publishing a release
 - [Findings](docs/findings.md): what's been tested and what iOS allows
 - [Design](docs/design.md): colors, icon, layout and wording

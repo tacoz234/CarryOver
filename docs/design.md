@@ -1,6 +1,6 @@
 # Design
 
-How Carryover looks and talks, on iPhone, iPad, Mac and Windows. Change this alongside the code when the design changes.
+How Carryover looks and talks, on iPhone, iPad, Mac, Windows and Linux. Change this alongside the code when the design changes.
 
 ## Principles
 
@@ -77,22 +77,20 @@ Settings, from the gear at the top left, holds the setup guide, the device list 
 
 ## Computer window
 
-A sidebar with Devices, Recent, Add a Device and Settings, and the version at the bottom. It's the same page on Mac and Windows, drawn in a web view.
+A sidebar with Devices, Recent, Add a Device and Settings, and the version at the bottom. It's the same page on Mac, Windows and Linux, drawn in a web view.
 
 - **Devices:** a card of rows. Each row has the device picture, its name and one line about it: "This computer", "Online", "Online through DESKTOP-GAMING", "Offline · last seen 3 days ago" or "Syncs when you open Carryover". Offline rows show Remove on hover. Dots line up on the right whether or not a row has Remove.
 - **Recent:** cards in a grid, 150px and up. Clicking copies, and a toast confirms it. × on hover removes one. Clear All needs a second click to confirm, since web view dialogs don't show everywhere.
 - **Add a Device:** a QR code for the iPhone's Camera app, and an invite link for computers.
 - **Settings:** General (pause, open at login), Updates and Troubleshooting (open the log). Sections are uppercase grey labels over white cards, in the style of system settings.
 
-## Tray menu
+## Tray and menu bar
 
-The menu bar on Mac, the notification area on Windows:
+On Mac, the menu bar icon opens a native menu with the app's status, up to eight devices, Add a Device, recent activity, Open Carryover, pause, updates and quit.
 
-- A title: "Carryover", "Carryover · 2 online" or "Carryover · Paused"
-- Up to eight devices, each with its picture and online dot, then Add a Device…
-- What last synced, then Open Carryover…, Pause Syncing, updates and Quit Carryover
+On Windows and KDE Linux, the tray icon opens the shared `panel.html` popup: up to six device rows, Add a Device, recent activity, a pause switch, updates, Settings and Quit. It stays open while controls are used and dismisses when clicked away or closed. The tooltip reports the connected-device count.
 
-The tooltip on Windows says how many devices are connected.
+KDE Linux uses a 64px rendering of the orange app icon, with a white clipboard and arrow, so users can distinguish Carryover from KDE's built-in clipboard manager.
 
 ## Words
 

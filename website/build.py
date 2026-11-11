@@ -6,7 +6,7 @@ import shutil
 ROOT = Path(__file__).resolve().parent
 DIST = ROOT / "dist"
 DIST.mkdir(exist_ok=True)
-for name in ("index.html", "styles.css", "script.js"):
+for name in ("index.html", "privacy.html", "support.html", "styles.css", "script.js"):
     shutil.copy2(ROOT / name, DIST / name)
 (DIST / "assets").mkdir(exist_ok=True)
 icon = ROOT.parent / "assets" / "icon-rounded.png"

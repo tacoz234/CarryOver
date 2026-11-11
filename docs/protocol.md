@@ -52,7 +52,7 @@ Each side's first frame is `hello`. Nothing else is sent until the peer's `hello
 
 ## Sync rules
 
-- A `clip` or `image` with an ID that's already been seen is dropped. Otherwise it's applied and forwarded to other connections. If the content is already on the clipboard, it's neither rewritten nor forwarded.
+- A `clip` or `image` with an ID that's already been seen is dropped. Otherwise it's applied and forwarded to other connections. If the content is already on the clipboard, it isn't rewritten, but it's still forwarded: a device that was away when the content first went around may be reachable only through this one.
 - When a copy holds both text and an image, only the text is sent.
 - The most recent clip to arrive wins. Device clocks aren't used, so a wrong clock can't block a device.
 - Nothing is sent on startup or connect, only after a new copy.
@@ -71,4 +71,4 @@ Each side's first frame is `hello`. Nothing else is sent until the peer's `hello
 
 ## Local addresses in invites
 
-Desktop invites include optional repeated `peer=<IPv4>:<port>` query items alongside the group code. Only private or link-local IPv4 addresses and nonzero ports are accepted. The joining device retains these as direct connection candidates, then falls back to Bonjour if they fail. Each connection still completes the encrypted group handshake before sharing any clipboard data. Older apps ignore these extra query items, and old invites and bare codes still use Bonjour. Hosts regenerate their local addresses when displaying an invite; if DHCP changes addresses and discovery is blocked, scan a fresh invite.
+Desktop invites include optional repeated `peer=<IPv4>:<port>` query items alongside the group code. Only private or link-local IPv4 addresses and nonzero ports are accepted. The joining device keeps these as direct connection candidates and tries them alongside Bonjour. Each connection still completes the encrypted group handshake before sharing any clipboard data. Older apps ignore these extra query items, and old invites and bare codes still use Bonjour. Hosts regenerate their local addresses when displaying an invite; if DHCP changes addresses and discovery is blocked, scan a fresh invite.

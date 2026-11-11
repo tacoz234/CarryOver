@@ -47,7 +47,14 @@ On a real iPhone 17 Pro (2026-11-02):
 
 - iPhone to Mac works through Carryover. The agent logged the clip from the phone.
 - Mac to iPhone worked, but Universal Clipboard carried it, because the Mac and iPhone share an Apple account. The app then sent the same text back, which is harmless. The fetch path still needs a check with Handoff turned off.
-- Reported as slow, with pop-ups. Remembered addresses now skip the 1–3 second network search.
+- Reported as slow, with pop-ups. Remembered addresses are now tried right away instead of after the 1–3 second network search. (Since 2026-11-10 the search still runs alongside them; see below.)
+
+On a Windows PC, Mac mini and iPhone (2026-11-10):
+
+- An iPhone copy reached the Mac mini but never the PC, though both computers were running and connected to each other. Two things combined:
+  - The phone skipped the network search whenever a remembered address answered, and then remembered only the addresses that answered. One sync while the PC was restarting dropped the PC for good, so the phone only ever reached the Mac.
+  - The Mac already had the text, most likely through Universal Clipboard while the PC was restarting. It didn't rewrite it, which is right, but it didn't forward it either, so the PC never got it.
+- Now the phone always searches too, and keeps older addresses next to new ones. Computers forward clips even when they already have the content.
 - Once the agent stopped, the app blamed the pairing code. It now only does that when the encryption check fails.
 
 ## Still needs an iPhone and Xcode

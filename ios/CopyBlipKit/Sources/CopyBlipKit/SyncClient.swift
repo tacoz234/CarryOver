@@ -171,13 +171,19 @@ public struct SyncClient: Sendable {
         var foundAny = false
     }
 
-    /// Runs `body` against each device, trying remembered addresses first.
+    /// Runs `body` against each device: remembered addresses right away, and
+    /// every other computer the search finds.
     func reach<T: Sendable>(
         stopWhen: @escaping @Sendable (T) -> Bool = { _ in false },
         _ body: @escaping @Sendable (PeerConnection) async throws -> T
     ) async throws -> [Reached<T>] {
         let combined = await direct(stopWhen: stopWhen, body)
-        if !combined.reached.isEmpty { return combined.reached }
+        if !combined.reached.isEmpty {
+            // A computer reached twice, at a remembered address and through
+            // Bonjour or on two networks, counts once.
+            var devices = Set<String>()
+            return combined.reached.filter { devices.insert($0.device).inserted }
+        }
         if combined.failures.contains(where: { ($0 as? ProtocolError) == .authenticationFailed }) {
             throw SyncError.wrongCode
         }
@@ -188,17 +194,29 @@ public struct SyncClient: Sendable {
         stopWhen: @escaping @Sendable (T) -> Bool,
         _ body: @escaping @Sendable (PeerConnection) async throws -> T
     ) async -> Attempt<T> {
+        // The search runs alongside the remembered addresses, never instead of
+        // them. Otherwise a computer that missed one sync, as when it was
+        // restarting, would be left out of every sync after it.
+        async let searched = endpoints()
         var attempt = Attempt<T>()
         if !remembered.isEmpty {
             // Short timeout, because a stale address shouldn't delay the search.
             let targets = remembered.compactMap(\.endpoint)
             (attempt.reached, attempt.failures) = await each(targets, timeout: .milliseconds(1500), stopWhen: stopWhen, body)
             attempt.foundAny = !attempt.reached.isEmpty
-            if !attempt.reached.isEmpty || Task.isCancelled { return attempt }
+            // Fetching needs only one answer. Returning cancels the search.
+            if Task.isCancelled || attempt.reached.contains(where: { stopWhen($0.value) }) { return attempt }
         }
-        let found = await endpoints()
-        let (reached, failed) = await each(found, timeout: .seconds(4), stopWhen: stopWhen, body)
-        attempt.reached = reached
+        let found = await searched
+        // Bonjour names each computer by its device ID, so ones already
+        // reached at a remembered address aren't connected to twice.
+        let reachedDevices = Set(attempt.reached.map(\.device))
+        let fresh = found.filter { endpoint in
+            guard case let .service(name, _, _, _) = endpoint else { return true }
+            return !reachedDevices.contains(name)
+        }
+        let (reached, failed) = await each(fresh, timeout: .seconds(4), stopWhen: stopWhen, body)
+        attempt.reached += reached
         attempt.failures += failed
         attempt.foundAny = attempt.foundAny || !found.isEmpty
         return attempt

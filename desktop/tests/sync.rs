@@ -294,7 +294,37 @@ fn a_clip_from_the_phone_reaches_every_device() {
 }
 
 #[test]
-fn text_already_on_the_clipboard_is_not_rewritten_or_forwarded() {
+fn a_device_that_missed_a_clip_gets_it_when_the_phone_sends_it_again() {
+    // a and b share a clip while c is away, as when c is restarting.
+    let (a, b) = (node("a", KEY), node("b", KEY));
+    connect(&a, &b);
+    wait_for("connection", || b.hub.peer_count() == 1);
+    a.clipboard.copy("copied while c was away");
+    wait_for_clip(&b, "copied while c was away");
+    settle();
+
+    let c = node("c", KEY);
+    connect(&c, &b);
+    wait_for("c", || b.hub.peer_count() == 2 && c.hub.peer_count() == 1);
+
+    // The phone reaches only b, which already has it.
+    let (mut stream, mut sealer, _) = phone(&b);
+    let resend = Message::Clip {
+        id: "resend".into(),
+        text: "copied while c was away".into(),
+    };
+    sealer.send(&mut stream, &resend).unwrap();
+    wait_for_clip(&c, "copied while c was away");
+    settle();
+    // Nobody who had it already rewrites it.
+    assert_eq!(a.clipboard.writes(), 1);
+    assert_eq!(b.clipboard.writes(), 1);
+    assert_eq!(c.clipboard.writes(), 1);
+    drop(stream);
+}
+
+#[test]
+fn text_already_on_the_clipboard_is_not_rewritten() {
     let (a, b) = (node("a", KEY), node("b", KEY));
     connect(&a, &b);
     wait_for("connection", || b.hub.peer_count() == 1);

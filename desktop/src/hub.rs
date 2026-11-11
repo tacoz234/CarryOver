@@ -439,11 +439,16 @@ impl Hub {
         }
         let digest = content.digest();
         let message = to_message(id.clone(), content.clone());
+        // Forwarded so devices that can only reach each other through us still
+        // sync. That includes content already on this clipboard: a device that
+        // was away or restarting when it first went around never got it, and
+        // the phone may have reached only this computer. The ID keeps it from
+        // looping, and devices that already have it don't rewrite it.
+        state.broadcast(&message, Some(connection));
+        state.last_clip = Some(message);
         if state.last_hash == Some(digest) {
-            // Already on this clipboard, e.g. the phone sending back something it
-            // got through Universal Clipboard. Every device that set last_hash
-            // also shared it, so there's nothing to write or forward.
-            state.last_clip = Some(message);
+            // Already on this clipboard, e.g. the phone sending back something
+            // it got through Universal Clipboard.
             return;
         }
         state.last_hash = Some(digest);
@@ -456,9 +461,6 @@ impl Hub {
             description: format!("Received {} from {from}", content.kind()),
             at: Instant::now(),
         });
-        // Forwarded so devices that can only reach each other through us still sync.
-        state.broadcast(&message, Some(connection));
-        state.last_clip = Some(message);
         drop(state);
         self.history
             .lock()

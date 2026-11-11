@@ -160,6 +160,17 @@ final class SyncModel {
         set { defaults.set(try? JSONEncoder().encode(newValue), forKey: "addresses") }
     }
 
+    /// Adds addresses that just worked to the front. Older ones are kept, so a
+    /// computer that was off for one sync isn't forgotten if Bonjour can't
+    /// see it. Stale ones only cost a short, parallel connection attempt.
+    private func remember(_ worked: [Address]) {
+        var merged: [Address] = []
+        for address in worked + addresses where !merged.contains(address) {
+            merged.append(address)
+        }
+        addresses = Array(merged.prefix(8))
+    }
+
     /// An invite opened from a link, waiting for the user to confirm.
     var pendingInvite: Invite?
 
@@ -215,7 +226,7 @@ final class SyncModel {
         defer { verifyingGroupConnection = false }
         do {
             let (seen, verified) = try await client.connect()
-            addresses = verified
+            remember(verified)
             saw(seen)
             return seen.reached
         } catch {
@@ -402,10 +413,13 @@ final class SyncModel {
 
     func send(_ content: Content) {
         guard let client else { return }
-        handledChangeCount = UIPasteboard.general.changeCount
+        // Marked handled only once it's out, so if no computer could be
+        // reached, opening the app again sends it instead of skipping it.
+        let changeCount = UIPasteboard.general.changeCount
         run("Sending…") {
             let (sent, addresses) = try await client.send(content)
-            self.addresses = addresses
+            self.handledChangeCount = changeCount
+            self.remember(addresses)
             self.saw(sent.seen)
             self.lastClipID = sent.id
             self.record(.sent, content, id: sent.id, peers: sent.to)
@@ -452,7 +466,7 @@ final class SyncModel {
         guard let client else { return }
         run("Checking your devices…") {
             let (latest, addresses, seen) = try await client.latest()
-            self.addresses = addresses
+            self.remember(addresses)
             self.saw(seen)
             guard let received = latest, received.id != self.lastClipID else {
                 return .upToDate

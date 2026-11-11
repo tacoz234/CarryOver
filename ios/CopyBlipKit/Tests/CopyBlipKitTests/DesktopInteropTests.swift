@@ -79,14 +79,27 @@ struct DesktopInteropTests {
         await #expect(throws: SyncError.wrongCode) { try await outsider.send(.text("nope")) }
     }
 
-    @Test func rememberedAddressSkipsDiscovery() async throws {
+    @Test func rememberedAddressDoesNotHideOtherDesktops() async throws {
+        // Only one desktop is remembered, as after a sync the other missed.
+        // The search still finds the other, and the remembered one, reached
+        // both ways, counts once.
+        let remembered = [Address(host: "127.0.0.1", port: setup.ports[0])]
+        let (sent, addresses) = try await setup.client(remembered: remembered).send(.text("everyone \(UUID())"))
+        #expect(sent.to.count == setup.ports.count)
+        #expect(Set(addresses.map(\.port)) == Set(setup.ports))
+    }
+
+    @Test func latestFromARememberedAddressDoesNotWaitForTheSearch() async throws {
+        _ = try await setup.client(ports: [setup.ports[0]]).send(.text("waiting \(UUID())"))
         let remembered = [Address(host: "127.0.0.1", port: setup.ports[0])]
         let client = SyncClient(group: setup.key, device: "test-phone", name: "Test iPhone", remembered: remembered, endpoints: {
-            Issue.record("searched the network even though a remembered address works")
+            try? await Task.sleep(for: .seconds(30))
             return []
         })
-        let (sent, _) = try await client.send(.text("direct \(UUID())"))
-        #expect(sent.to.count == 1)
+        let start = ContinuousClock.now
+        let (received, _, _) = try await client.latest()
+        #expect(received != nil)
+        #expect(ContinuousClock.now - start < .seconds(5))
     }
 
     @Test func staleRememberedAddressFallsBackToDiscovery() async throws {

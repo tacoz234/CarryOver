@@ -2,11 +2,21 @@
 
 The app is version **0.4.0 (3)**, bundle ID `com.coledeterman.CopyBlip`, team `A6GZ8F6PF5`. The intended release is **free**, with **manual release after approval**. Do not submit for App Review as part of build or metadata preparation.
 
+## App Store Connect preparation status
+
+App record: https://appstoreconnect.apple.com/apps/6833283899/distribution/ios/version/inflight
+
+On November 10, 2026, version 0.4.0 build 3 was uploaded, processed successfully and selected for the store version. Internal TestFlight testing is ready. The live listing has the en-US copy, support/marketing/privacy URLs, Utilities and Productivity categories, 4+ age rating, a free price (USA base with automatic regional equalization), availability selected in 175 territories, and manual release. No App Review or external beta review submission was created.
+
+The privacy URL and the App Privacy data-collection label are separate settings. The latter still needs to be published as **Data Not Collected** on Apple's website; API preparation does not publish it. Reviewer instructions remain in `review-notes.txt` until a private contact first name, last name and phone number are provided to Apple. Account-specific declarations or agreements must be checked by the account holder before review.
+
+**Build 3 is already uploaded.** Bump the build number before uploading another binary. Do not rerun upload expecting Apple to replace that build.
+
 ## Assets
 
 - `metadata.en-US.json`: store copy, URLs, privacy answers and intended settings. This is a preparation file, not a raw App Store Connect API request.
 - `review-notes.txt`: steps to review the real local-network workflow with the free computer companion. The app has no account or demo login.
-- `screenshots/en-US`: real simulator captures using synthetic clipboard items and an isolated test group; no production pairing keys or personal clipboard contents. iPhone: 1320 × 2868; iPad: 2064 × 2752. These are PNG app screenshots, not generated mockups.
+- `screenshots/en-US`: real simulator captures using synthetic clipboard items and an isolated test group; no production pairing keys or personal clipboard contents. Required medium iPhone: 1206 × 2622; additional large iPhone: 1320 × 2868; iPad: 2064 × 2752. These are PNG app screenshots, not generated mockups.
 - `ExportOptions.plist`: automatic App Store distribution signing. Private signing keys and API credentials must stay outside the repository.
 
 Public URLs:
@@ -26,7 +36,7 @@ ios/scripts/prepare-app-store.sh
 
 This archives Release and exports `ios/build/app-store/export/CopyBlip.ipa`. The build output is ignored by Git. The script sets `DEVELOPER_DIR` only for its process if needed; it does not change the global Xcode selection.
 
-An App Store Connect app record must already exist before uploading. Create it in the website with iOS, English (U.S.), bundle ID `com.coledeterman.CopyBlip`, and SKU `carryover-ios`. Apple's public API cannot create the initial app record. Its name must be available in the account.
+The App Store Connect record is **Carryover: Shared Clipboard**, app ID `6833283899`, primary language English (U.S.), bundle ID `com.coledeterman.CopyBlip`, SKU `carryover-ios`. The installed app continues to display Carryover. Apple's public API cannot create the initial app record; it was created on the website.
 
 Once the record exists:
 

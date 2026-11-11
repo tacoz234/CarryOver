@@ -45,6 +45,11 @@ struct OnboardingView: View {
                     } else {
                         pairing
                     }
+                    HStack(spacing: 24) {
+                        Link("Privacy Policy", destination: AppLinks.privacy)
+                        Link("Support", destination: AppLinks.support)
+                    }
+                    .font(.footnote)
                     Spacer(minLength: 0)
                 }
                 .frame(maxWidth: 480)

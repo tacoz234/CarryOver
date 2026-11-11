@@ -34,6 +34,12 @@ struct ContentView: View {
     }
 }
 
+/// Public pages also used by the App Store listing.
+enum AppLinks {
+    static let privacy = URL(string: "https://tacoz234.github.io/CarryOver/privacy.html")!
+    static let support = URL(string: "https://tacoz234.github.io/CarryOver/support.html")!
+}
+
 /// Carryover's coral, matching the computers' window.
 enum Brand {
     /// #E0482D, readable both on white and in dark mode.
@@ -412,6 +418,14 @@ private struct SettingsSheet: View {
                         Text("Devices")
                     } footer: {
                         Text("Swipe to remove a device you don't use anymore. It comes back if it syncs again.")
+                    }
+                }
+                Section("Help & Privacy") {
+                    Link(destination: AppLinks.support) {
+                        Label("Support", systemImage: "questionmark.circle")
+                    }
+                    Link(destination: AppLinks.privacy) {
+                        Label("Privacy Policy", systemImage: "hand.raised")
                     }
                 }
                 Section {

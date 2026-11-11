@@ -36,5 +36,7 @@
 	</array>
 	<key>NSCameraUsageDescription</key>
 	<string>Carryover uses the camera to scan an invite QR code from your other device.</string>
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
 </dict>
 </plist>

@@ -1,0 +1,43 @@
+{
+  "bundleId": "com.coledeterman.CopyBlip",
+  "sku": "carryover-ios",
+  "primaryLocale": "en-US",
+  "version": "0.4.0",
+  "build": "3",
+  "name": "Carryover",
+  "subtitle": "Copy here. Paste there.",
+  "primaryCategory": "UTILITIES",
+  "secondaryCategory": "PRODUCTIVITY",
+  "promotionalText": "Share text and images between your iPhone, iPad and computers on the same local network. Open Carryover on your phone to send a new copy or get the latest clip.",
+  "description": "One less thing to send yourself.\n\nCarryover shares your clipboard between your iPhone, iPad, Mac and Windows PC. Copy text or an image on one device, then use it on another device in your group.\n\nCOPY HERE. PASTE THERE.\nOpen Carryover on iPhone or iPad to send something you just copied. If there is nothing new to send, it gets the latest clip from your computers. Use Paste to Send for an explicit paste, or Get Latest to fetch from a computer.\n\nYOUR RECENT COPIES, READY AGAIN\nBrowse the last 20 items you sent or received. Tap a text preview or image thumbnail to copy it again. Delete individual items or clear Recent whenever you like.\n\nYOUR OWN DEVICES\nPair by scanning an invite QR code or pasting an invite link. See the devices in your group and which computers are online. No account is required.\n\nLOCAL AND ENCRYPTED\nClips travel encrypted between paired devices on your local network. There is no hosted clipboard service, advertising or tracking in the app. Your clipboard and recent items stay on your devices.\n\nBEFORE YOU START\nInstall the free Carryover companion app on your Mac or Windows PC from https://tacoz234.github.io/CarryOver/ and keep it running. Devices need to be on the same local network. Local network access is required to find and connect to computers. Camera access is optional for scanning pairing codes.\n\nOn iPhone and iPad, syncing happens while Carryover is open; it does not run continuously in the background. Plain text and images are supported; files and rich text formatting are not. Only join groups made on your own trusted devices, and keep invite links private.\n\nSupport: https://tacoz234.github.io/CarryOver/support.html\nPrivacy: https://tacoz234.github.io/CarryOver/privacy.html",
+  "keywords": "clipboard,copy,paste,sync,share,text,image,Mac,Windows,local,network,productivity",
+  "supportUrl": "https://tacoz234.github.io/CarryOver/support.html",
+  "marketingUrl": "https://tacoz234.github.io/CarryOver/",
+  "privacyPolicyUrl": "https://tacoz234.github.io/CarryOver/privacy.html",
+  "copyright": "2026 Cole Determan",
+  "price": "FREE",
+  "releaseType": "MANUAL",
+  "supportEmail": "determantechhelp@gmail.com",
+  "betaAppDescription": "Share plain text and images between your iPhone, iPad and computers over the same local network. Requires the free Carryover desktop companion. iPhone/iPad syncing happens while the app is open.",
+  "betaFeedbackEmail": "determantechhelp@gmail.com",
+  "whatsNew": "Initial App Store release of Carryover for iPhone and iPad.",
+  "privacy": {
+    "tracking": false,
+    "dataCollection": "NONE",
+    "note": "No developer-operated backend, analytics, advertising or third-party SDKs. Clipboard, device identity and history remain on user-paired devices. User-initiated support email is processed separately as described in the privacy policy."
+  },
+  "usesNonExemptEncryption": false,
+  "encryptionRationale": "The iOS binary uses Apple CryptoKit for ChaChaPoly, HKDF and SHA256. No bundled third-party encryption implementation. This declares exemption from encryption documentation, not absence of encryption. Reassess if cryptographic dependencies change.",
+  "ageRatingPreparation": {
+    "advertising": false,
+    "inAppPurchases": false,
+    "userAccounts": false,
+    "unrestrictedWebAccess": false,
+    "chatOrMessaging": false,
+    "note": "Local clipboard sharing among the user’s own paired devices. No app-provided mature content, social network, gambling, medical advice or public user-generated content. Complete Apple’s current questionnaire in the account before submission."
+  },
+  "reviewContactEmail": "determantechhelp@gmail.com",
+  "reviewContactName": null,
+  "reviewContactPhone": null,
+  "submissionAllowed": false
+}

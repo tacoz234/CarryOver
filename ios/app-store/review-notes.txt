@@ -1,0 +1,14 @@
+Carryover is a local-network clipboard utility for iPhone and iPad with free desktop companion apps. No account, login, purchase or subscription is required.
+
+Requirements: a Mac or Windows PC and an iPhone/iPad on the same local network, with device-to-device traffic allowed. The iPhone/iPad app syncs while open; it does not claim continuous background clipboard access.
+
+1. On the computer, install Carryover from https://github.com/tacoz234/CarryOver/releases/latest (Carryover-Mac.dmg or Carryover-Setup.exe). Setup and support: https://tacoz234.github.io/CarryOver/support.html . Keep the companion running.
+2. On the first computer, choose This is my first device to start a group. Choose Add a Device to display its QR code or invite link.
+3. On the phone/tablet, choose I already use Carryover and scan that QR code, or paste the invite link. Join Group. Allow Local Network access. Camera permission is optional; pasting an invite works without it. Follow or skip the optional permission checks in setup.
+4. Copy a short plain-text sample on the computer, then open Carryover on the phone/tablet. The item arrives and is available to paste. Get Latest also fetches the latest clip.
+5. Copy new text in another phone/tablet app, then open Carryover to send it to the computer. If prompted, allow pasting, or use Paste to Send. Paste into a text editor on the computer to verify. PNG images can be tested the same way.
+6. Recent holds up to 20 locally stored clips. Tap an item to copy it again. Delete individual items or use Clear Recent. Settings includes Setup Guide, Support, Privacy Policy and Leave Group.
+
+Only the local camera is used to read invite QR codes. There is no server login, demo account or developer-controlled cloud clipboard. Pairing codes are generated locally by the reviewer; please do not use a production user's group.
+
+The Mac companion is currently ad-hoc signed rather than notarized. If macOS blocks opening it, open System Settings > Privacy & Security > Open Anyway after the first launch attempt. The Windows companion may prompt for firewall permission; allow the trusted private network. If additional equipment or a demonstration video is needed, contact determantechhelp@gmail.com.

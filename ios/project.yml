@@ -17,7 +17,7 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.coledeterman.CopyBlip
         MARKETING_VERSION: "0.4.0"
-        CURRENT_PROJECT_VERSION: "2"
+        CURRENT_PROJECT_VERSION: "3"
         TARGETED_DEVICE_FAMILY: "1,2"
         SWIFT_VERSION: "6.0"
         GENERATE_INFOPLIST_FILE: YES
@@ -35,6 +35,8 @@ targets:
       properties:
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        # All iOS cryptographic primitives come from Apple CryptoKit.
+        ITSAppUsesNonExemptEncryption: false
         NSCameraUsageDescription: Carryover uses the camera to scan an invite QR code from your other device.
         NSBonjourServices: [_copyblip._tcp]
         # Lets the Camera app open invite QR codes from `copyblip invite`.
